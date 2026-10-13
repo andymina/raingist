@@ -51,3 +51,9 @@ def test_connect_new_and_reconnect(settings, monkeypatch):
     again = accounts.connect(settings, "code2")
     assert again.access_token == "at2"
     assert (again.enabled, again.include_collections, again.exclude_collections) == (False, [1], [2])
+
+def test_authorize_url():
+    from raingist.raindrop import authorize_url
+    assert authorize_url("cid", "http://localhost:8765/callback") == (
+        "https://raindrop.io/oauth/authorize?response_type=code&client_id=cid"
+        "&redirect_uri=http%3A%2F%2Flocalhost%3A8765%2Fcallback")

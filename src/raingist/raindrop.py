@@ -8,7 +8,7 @@ TOKEN_URL = "https://raindrop.io/oauth/access_token"
 class RaindropError(Exception): ...
 
 def authorize_url(client_id: str, redirect_uri: str) -> str:
-    return str(httpx.URL(AUTHORIZE_URL, params={"client_id": client_id, "redirect_uri": redirect_uri}))
+    return str(httpx.URL(AUTHORIZE_URL, params={"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri}))
 
 def token_request(payload: dict) -> dict:
     """POST to the OAuth token endpoint. Returns {access_token, refresh_token, expires_in, ...}."""
