@@ -47,11 +47,11 @@ def test_connect_new_and_reconnect(settings, monkeypatch):
     acct = accounts.connect(settings, " code1 ")
     assert payloads[0]["grant_type"] == "authorization_code" and payloads[0]["code"] == "code1"
     assert (acct.id, acct.name, acct.enabled) == (42, "Owner", True)
-    acct.enabled, acct.include_collections, acct.exclude_collections = False, [1], [2]
+    acct.enabled, acct.include_collections, acct.exclude_collections, acct.inbox_collection = False, [1], [2], 3
     store(settings).save(settings, acct)
     again = accounts.connect(settings, "code2")
     assert again.access_token == "at2"
-    assert (again.enabled, again.include_collections, again.exclude_collections) == (False, [1], [2])
+    assert (again.enabled, again.include_collections, again.exclude_collections, again.inbox_collection) == (False, [1], [2], 3)
 
 def test_authorize_url():
     from raingist.raindrop import authorize_url

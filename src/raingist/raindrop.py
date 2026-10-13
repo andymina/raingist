@@ -47,11 +47,12 @@ class Raindrop:
             return data
         raise RaindropError(f"{method} {path}: retries exhausted")
 
-    def search(self, query: str, max_pages: int = 10) -> list[dict]:
+    def search(self, query: str, max_pages: int = 10, collection: int = 0) -> list[dict]:
+        """Bookmarks matching `query` in `collection` (0 = all except Trash), newest first."""
         items: list[dict] = []
         for page in range(max_pages):
-            batch = self._req("GET", "/raindrops/0", params={
-                "search": query, "sort": "-created", "perpage": 50, "page": page}).get("items", [])
+            params = {"sort": "-created", "perpage": 50, "page": page} | ({"search": query} if query else {})
+            batch = self._req("GET", f"/raindrops/{collection}", params=params).get("items", [])
             items.extend(batch)
             if len(batch) < 50:
                 break
@@ -72,6 +73,14 @@ class Raindrop:
 
     def update(self, rid: int, **fields) -> dict:
         return self._req("PUT", f"/raindrop/{rid}", json=fields)["item"]
+
+    def collections(self) -> list[dict]:
+        """Every collection, top-level and nested."""
+        return self._req("GET", "/collections")["items"] + self._req("GET", "/collections/childrens")["items"]
+
+    def recent_titles(self, collection: int, n: int) -> list[str]:
+        items = self._req("GET", f"/raindrops/{collection}", params={"sort": "-created", "perpage": n}).get("items", [])
+        return [i.get("title", "") for i in items]
 
     def tags(self) -> list[str]:
         return [t["_id"] for t in self._req("GET", "/tags").get("items", [])]

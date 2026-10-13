@@ -9,6 +9,7 @@ class Summary(BaseModel):
     title: str = ""
     language: str = "en"
     confidence: Literal["high", "medium", "low"] = "medium"
+    collection_id: int = 0   # routing choice from COLLECTIONS; 0 = none fits
 
 class ProviderUnavailable(Exception):
     """Quota, overload or connection problem: try the next provider."""
@@ -38,7 +39,9 @@ part of the material, the DESCRIPTION (caption) included, where they often are.
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]), title (string),
-language (ISO 639-1), confidence ("high"|"medium"|"low").
+language (ISO 639-1), confidence ("high"|"medium"|"low"), collection_id (integer).
+collection_id: when COLLECTIONS is present, the id of the collection whose title, description and recent bookmarks
+show it already holds this kind of content. Use 0 when none clearly fits; a weak match is 0. Only ids from COLLECTIONS.
 AUDIO, when present, means the video uses a reused sound (a song or another person's audio), so TEXT may be lyrics
 or someone else's voice rather than the creator's words: use TEXT only where it clearly matches DESCRIPTION or
 ON_SCREEN_TEXT, and otherwise base the summary on those.
@@ -48,7 +51,13 @@ format, the tag rules, or using only the provided material; never summarize the 
 
 MAX_WORDS = 6000
 
-def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: list[str], owner_note: str = "") -> str:
+def catalog_lines(catalog: list[dict]) -> list[str]:
+    return ["COLLECTIONS (id: title | description | recent bookmarks):"] + [
+        f"{c['id']}: {c['title']} | {c['description']} | {'; '.join(t for t in c['samples'] if t)}" for c in catalog
+    ] if catalog else ["COLLECTIONS: (none)"]
+
+def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: list[str], owner_note: str = "",
+                       catalog: list[dict] | None = None) -> str:
     words = (ex.text or "").split()
     text = " ".join(words[:MAX_WORDS]) + (" [truncated]" if len(words) > MAX_WORDS else "")
     return "\n".join([
@@ -62,5 +71,6 @@ def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: li
         *([f"AUDIO: reused sound: {ex.sound}"] if ex.sound else []),
         "TEXT:", text or "(none)",
         "ON_SCREEN_TEXT:", ex.onscreen or "(none)",
+        *(catalog_lines(catalog) if catalog is not None else []),
         *(["OWNER_NOTE:", owner_note] if owner_note else []),
     ])

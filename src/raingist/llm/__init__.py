@@ -10,10 +10,10 @@ PROVIDERS = {"gemini": gemini_provider.generate, "anthropic": anthropic_provider
 DEFAULT_MODELS = {"gemini": "gemini-3.5-flash-lite", "anthropic": "claude-haiku-5-5"}
 
 def summarize(s, item: dict, ctype: str, ex: Extraction, existing_tags: list[str],
-              owner_note: str = "") -> tuple[Summary, str]:
+              owner_note: str = "", catalog: list[dict] | None = None) -> tuple[Summary, str]:
     """Try LLM_PROVIDERS in order. Returns (summary, model). Raises TransientFailure if none work."""
     system = SYSTEM_PROMPT.format(language=s.summary_language)
-    message = build_user_message(item, ctype, ex, existing_tags, owner_note)
+    message = build_user_message(item, ctype, ex, existing_tags, owner_note, catalog)
     last: Exception | None = None
     for name in s.llm_providers:
         model = s.llm_models[name]

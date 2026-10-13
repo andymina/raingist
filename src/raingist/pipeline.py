@@ -12,6 +12,8 @@ from .notify import Alerts
 
 log = logging.getLogger(__name__)
 SYSTEMIC_STREAK = 3
+UNSORTED = -1                  # Raindrop's "Unsorted" collection
+MAX_COLLECTIONS, SAMPLE_TITLES = 50, 5
 
 def today() -> str:
     return dt.date.today().isoformat()
@@ -34,18 +36,49 @@ def extract(s: Settings, ctype: str, item: dict, want_ocr: bool, cache_dir=None)
 
 def in_scope(acct: Account, item: dict) -> bool:
     cid = item.get("collection", {}).get("$id")
+    if acct.inbox_collection is not None:
+        return cid == acct.inbox_collection
     if acct.include_collections and cid not in acct.include_collections:
         return False
     return cid not in acct.exclude_collections
 
+def blocked(s: Settings, acct: Account, item: dict) -> bool:
+    """Has a state tag that stops processing (redo overrides). In inbox mode leaving the inbox means done,
+    so only failed/skip block; a done-tagged bookmark moved back in is routed again."""
+    tags = {t.lower() for t in item.get("tags", [])}
+    if s.tag_redo in tags:
+        return False
+    stop = {s.tag_failed, s.tag_skip} if acct.inbox_collection is not None else s.state_tags
+    return bool(tags & stop)
+
+def pending_items(s: Settings, acct: Account, rd: Raindrop) -> list[dict]:
+    if acct.inbox_collection is not None:
+        items = rd.search("", collection=acct.inbox_collection)   # any age: dragging a bookmark in queues it
+    else:
+        items = rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
+    return [i for i in items if detect(s, i.get("link", "")) and in_scope(acct, i) and not blocked(s, acct, i)]
+
+def collection_catalog(rd: Raindrop, acct: Account) -> list[dict]:
+    """Routing candidates: every collection except the inbox, with its path, description and recent titles."""
+    cols = [c for c in rd.collections() if c["_id"] != acct.inbox_collection]
+    by_id = {c["_id"]: c for c in cols}
+    def path(c):
+        parent = by_id.get((c.get("parent") or {}).get("$id"))
+        return f"{path(parent)} / {c['title']}" if parent else c["title"]
+    return [{"id": c["_id"], "title": path(c), "description": c.get("description") or "",
+             "samples": rd.recent_titles(c["_id"], SAMPLE_TITLES)} for c in cols[:MAX_COLLECTIONS]]
+
+def route(summary, catalog: list[dict]) -> int:
+    return summary.collection_id if summary.collection_id in {c["id"] for c in catalog} else UNSORTED
+
 def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, rid: int,
-                 existing_tags: list[str], dry_run: bool = False) -> str:
-    """Returns one of: done, failed, retry, noop."""
+                 existing_tags: list[str], dry_run: bool = False, catalog: list[dict] | None = None) -> str:
+    """Returns one of: done, failed, retry, noop. `catalog` (inbox mode) lists the collections to route into."""
     item = rd.get(rid)   # fresh, right before writing
     tags = {t.lower() for t in item.get("tags", [])}
     redo = s.tag_redo in tags
     ctype = detect(s, item.get("link", ""))
-    if ctype is None or not in_scope(acct, item) or (not redo and tags & s.state_tags):
+    if ctype is None or not in_scope(acct, item) or blocked(s, acct, item):
         return "noop"
     note = writeback.strip_ai_block(item.get("note", "")) if redo else item.get("note", "")
     drop = s.state_tags | {s.tag_redo}
@@ -54,7 +87,7 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
         log.info("[%s] item %s: forwarding %d chars of owner note", acct.id, rid, len(owner_note))
     try:
         ex = extract(s, ctype, item, want_ocr=s.tag_ocr in tags)
-        summary, model = summarize(s, item, ctype, ex, existing_tags, owner_note)
+        summary, model = summarize(s, item, ctype, ex, existing_tags, owner_note, catalog)
     except PermanentFailure as e:
         attempts.clear(rid)
         return _finish(s, acct, rd, item, s.tag_failed, drop, dry_run, note=writeback.merge_failure(note, str(e), today()))
@@ -74,6 +107,12 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
               "tags": writeback.merge_tags(item.get("tags", []), chosen, s.tag_done, drop)}
     if writeback.is_placeholder_title(item.get("title"), item["link"]) and summary.title.strip():
         fields["title"] = summary.title.strip()[:1000]
+    if catalog is not None:   # inbox mode: leaving the inbox is the done state, so no raingist-* tags stay
+        fields["tags"] = writeback.strip_reserved(fields["tags"])
+        dest = route(summary, catalog)
+        fields["collection"] = {"$id": dest}
+        log.info("[%s] item %s -> collection %s", acct.id, rid,
+                 next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"))
     attempts.clear(rid)
     return _finish(s, acct, rd, item, s.tag_done, drop, dry_run, **fields)
 
@@ -91,16 +130,16 @@ def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool 
     state_dir = s.state_dir / str(acct.id)
     state_dir.mkdir(parents=True, exist_ok=True)
     attempts = Attempts(state_dir / "attempts.json", s.retry_backoff)
-    pending = [i for i in rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
-               if detect(s, i.get("link", "")) and in_scope(acct, i) and attempts.due(i["_id"])]
+    pending = [i for i in pending_items(s, acct, rd) if attempts.due(i["_id"])]
     pending = pending[: limit or s.max_items_per_account]
     existing_tags = rd.tags() if pending else []
+    catalog = collection_catalog(rd, acct) if pending and acct.inbox_collection is not None else None
     counts: dict[str, int] = {}
     streak, last_error = 0, ""
     for item in pending:
         rid = item["_id"]
         try:
-            r = process_item(s, acct, rd, attempts, rid, existing_tags, dry_run=dry_run)
+            r = process_item(s, acct, rd, attempts, rid, existing_tags, dry_run=dry_run, catalog=catalog)
         except Exception as e:   # one bad item must not stop the rest; logged with traceback, alerted via streak
             log.exception("[%s] item %s crashed: %s", acct.id, rid, e)
             r, last_error = "crash", str(e)

@@ -37,3 +37,11 @@ def test_user_message_optional_sections():
     msg = build_user_message(ITEM, "tiktok", Extraction(sound="Big Fun by Heathers"), [], "list the tools")
     assert "AUDIO: reused sound: Big Fun by Heathers" in msg
     assert msg.endswith("OWNER_NOTE:\nlist the tools")
+
+def test_user_message_collections():
+    from raingist.llm.prompt import build_user_message
+    assert "COLLECTIONS" not in build_user_message(ITEM, "tiktok", Extraction(), [])
+    assert "COLLECTIONS: (none)" in build_user_message(ITEM, "tiktok", Extraction(), [], catalog=[])
+    msg = build_user_message(ITEM, "tiktok", Extraction(), [],
+                             catalog=[{"id": 7, "title": "Food / Recipes", "description": "eats", "samples": ["Pasta", ""]}])
+    assert "7: Food / Recipes | eats | Pasta" in msg

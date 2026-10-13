@@ -17,6 +17,7 @@ class Account:
     enabled: bool = True
     include_collections: list[int] = field(default_factory=list)
     exclude_collections: list[int] = field(default_factory=list)
+    inbox_collection: int | None = None   # set: process only this collection, then route bookmarks out of it
 
     def to_dict(self):
         return asdict(self)
@@ -38,8 +39,8 @@ def connect(s, code: str) -> Account:
                    expires_at=time.time() + float(t.get("expires_in", 0)))
     try:
         old = store(s).load(s, acct.id)   # keep switches/filters on reconnect
-        acct.enabled, acct.include_collections, acct.exclude_collections = (
-            old.enabled, old.include_collections, old.exclude_collections)
+        acct.enabled, acct.include_collections, acct.exclude_collections, acct.inbox_collection = (
+            old.enabled, old.include_collections, old.exclude_collections, old.inbox_collection)
     except AccountError:
         pass   # new account
     store(s).save(s, acct)

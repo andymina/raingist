@@ -36,7 +36,8 @@ def test_account_cycle_systemic(settings, make_account, alerts, monkeypatch):
         def tags(self): return []
 
     seen = []
-    def fake_process(s, a, rd, attempts, rid, tags, dry_run=False):
+    def fake_process(s, a, rd, attempts, rid, tags, dry_run=False, catalog=None):
+        assert catalog is None   # tag mode never routes
         seen.append(rid); return "retry"
     monkeypatch.setattr(pipeline, "Raindrop", FakeRD)
     monkeypatch.setattr(pipeline, "access_token", lambda s, a: "t")
@@ -46,3 +47,27 @@ def test_account_cycle_systemic(settings, make_account, alerts, monkeypatch):
     assert alerts.keys == ["systemic:1"]
     status = json.loads((settings.state_dir / "1" / "status.json").read_text())
     assert status["counts"] == {"retry": 3}
+
+
+def test_account_cycle_inbox_mode(settings, make_account, alerts, monkeypatch):
+    acct = make_account(settings, 1, inbox_collection=5)
+    inbox = [{"_id": 1, "link": "https://www.tiktok.com/@u/video/1", "tags": [], "collection": {"$id": 5}},
+             {"_id": 2, "link": "https://www.tiktok.com/@u/video/2", "tags": ["raingist-skip"], "collection": {"$id": 5}},
+             {"_id": 3, "link": "https://example.com/x", "tags": [], "collection": {"$id": 5}}]
+
+    class FakeRD:
+        def __init__(self, token): pass
+        def search(self, query, max_pages=10, collection=0):
+            assert collection == 5; return inbox
+        def tags(self): return []
+        def collections(self): return [{"_id": 5, "title": "raingist"}, {"_id": 8, "title": "Recipes"}]
+        def recent_titles(self, cid, n): return ["Pasta"]
+
+    seen = []
+    def fake_process(s, a, rd, attempts, rid, tags, dry_run=False, catalog=None):
+        seen.append((rid, [c["id"] for c in catalog])); return "done"
+    monkeypatch.setattr(pipeline, "Raindrop", FakeRD)
+    monkeypatch.setattr(pipeline, "access_token", lambda s, a: "t")
+    monkeypatch.setattr(pipeline, "process_item", fake_process)
+    assert pipeline.run_account_cycle(settings, acct, alerts) == {"done": 1}
+    assert seen == [(1, [8])]   # skip-tagged and non-TikTok stay; inbox is not a destination

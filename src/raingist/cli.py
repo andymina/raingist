@@ -5,7 +5,7 @@ from .accounts import AccountError, store, connect, access_token
 from .raindrop import Raindrop, authorize_url
 from .oauth_callback import wait_for_code
 from .state import Attempts, RunLock, Busy
-from .pipeline import run_cycle, process_item, extract, in_scope
+from .pipeline import run_cycle, process_item, extract, pending_items, collection_catalog
 from .extract import detect
 from .llm import summarize
 from .notify import Alerts
@@ -99,8 +99,9 @@ def cmd_process(s, args):
     rd = Raindrop(access_token(s, acct))
     with RunLock(s.state_dir / "run.lock"):
         state_dir = s.state_dir / str(acct.id); state_dir.mkdir(parents=True, exist_ok=True)
+        catalog = collection_catalog(rd, acct) if acct.inbox_collection is not None else None
         print(process_item(s, acct, rd, Attempts(state_dir / "attempts.json", s.retry_backoff),
-                           args.id, rd.tags(), dry_run=args.dry_run))
+                           args.id, rd.tags(), dry_run=args.dry_run, catalog=catalog))
 
 def cmd_test(s, args):
     """Extract + summarize one URL. No Raindrop access; cache goes to work/test-cache."""
@@ -137,7 +138,7 @@ def cmd_accounts(s, args):
     for aid in store(s).ids(s):
         try:
             a = store(s).load(s, aid)
-            print(f"{a.id}\t{a.name}\tenabled={a.enabled}\tinclude={a.include_collections}\texclude={a.exclude_collections}")
+            print(f"{a.id}\t{a.name}\tenabled={a.enabled}\tinbox={a.inbox_collection}\tinclude={a.include_collections}\texclude={a.exclude_collections}")
         except AccountError as e:
             print(f"{aid}\tINVALID: {e}")
 
@@ -149,10 +150,9 @@ def cmd_status(s, args):
         rd = Raindrop(access_token(s, acct))
         status = s.state_dir / str(aid) / "status.json"
         attempts = Attempts(s.state_dir / str(aid) / "attempts.json", s.retry_backoff)
-        pending = [i for i in rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
-                   if detect(s, i.get("link", "")) and in_scope(acct, i)]
-        print(f"== {aid} {acct.name} enabled={acct.enabled} include={acct.include_collections} "
-              f"exclude={acct.exclude_collections} pending={len(pending)}")
+        scope = (f"inbox={acct.inbox_collection}" if acct.inbox_collection is not None
+                 else f"include={acct.include_collections} exclude={acct.exclude_collections}")
+        print(f"== {aid} {acct.name} enabled={acct.enabled} {scope} pending={len(pending_items(s, acct, rd))}")
         print("   last cycle:", status.read_text().strip() if status.exists() else "never")
         print("   retrying:", json.dumps(attempts.data))
 

@@ -8,6 +8,8 @@ from raingist.state import Attempts
 from raingist import writeback
 
 TT = "https://www.tiktok.com/@u/video/1"
+INBOX = 5
+ROUTE_TO = [0]   # collection_id the fake summarizer returns
 
 class FakeRaindrop:
     def __init__(self, items):
@@ -31,14 +33,16 @@ def item(rid=10, link=TT, tags=(), note="", cid=5):
 def ok(monkeypatch):
     monkeypatch.setattr(pipeline, "extract", lambda s, ctype, it, want_ocr: Extraction(text="t", source="captions"))
     calls = []
-    def summarize(s, it, ctype, ex, tags, owner_note=""):
+    def summarize(s, it, ctype, ex, tags, owner_note="", catalog=None):
         calls.append(owner_note)
-        return Summary(summary="New summary.", key_takeaways=["k"], tags=["Cooking"], title="A title"), "m"
+        return Summary(summary="New summary.", key_takeaways=["k"], tags=["Cooking"], title="A title",
+                       collection_id=ROUTE_TO[0]), "m"
     monkeypatch.setattr(pipeline, "summarize", summarize)
     return calls
 
-def run(settings, tmp_path, rd, rid=10):
-    return pipeline.process_item(settings, acct(), rd, Attempts(tmp_path / "a.json", settings.retry_backoff), rid, [])
+def run(settings, tmp_path, rd, rid=10, account=None, catalog=None):
+    return pipeline.process_item(settings, account or acct(), rd, Attempts(tmp_path / "a.json", settings.retry_backoff),
+                                 rid, [], catalog=catalog)
 
 def test_in_scope():
     assert pipeline.in_scope(acct(), item())
@@ -93,3 +97,43 @@ def test_whole_note_forwarded_without_tokens(settings, tmp_path, ok):
     rd = FakeRaindrop([item(note="Claude skills")])
     run(settings, tmp_path, rd)
     assert ok == ["Claude skills"]
+
+
+CATALOG = [{"id": 77, "title": "Recipes", "description": "", "samples": ["Pasta"]}]
+
+@pytest.mark.parametrize("chosen,dest", [(77, 77), (0, pipeline.UNSORTED), (12345, pipeline.UNSORTED)])
+def test_inbox_routes_and_strips_reserved_tags(settings, tmp_path, ok, monkeypatch, chosen, dest):
+    ROUTE_TO[0] = chosen
+    rd = FakeRaindrop([item(tags=["Mine", "raingist-ocr", "raingist-done"], cid=INBOX)])
+    assert run(settings, tmp_path, rd, account=acct(inbox_collection=INBOX), catalog=CATALOG) == "done"
+    fields = rd.updates[0][1]
+    assert fields["collection"] == {"$id": dest}
+    assert fields["tags"] == ["Mine", "cooking"]
+    ROUTE_TO[0] = 0
+
+def test_inbox_failure_stays_in_inbox(settings, tmp_path, monkeypatch):
+    def gone(*a, **k): raise PermanentFailure("Video is private")
+    monkeypatch.setattr(pipeline, "extract", gone)
+    rd = FakeRaindrop([item(cid=INBOX)])
+    assert run(settings, tmp_path, rd, account=acct(inbox_collection=INBOX), catalog=CATALOG) == "failed"
+    fields = rd.updates[0][1]
+    assert "collection" not in fields and fields["tags"] == ["raingist-failed"]
+
+def test_inbox_scope_and_blocking(settings):
+    inbox = acct(inbox_collection=INBOX, include_collections=[99])
+    assert pipeline.in_scope(inbox, item(cid=INBOX)) and not pipeline.in_scope(inbox, item(cid=99))
+    assert not pipeline.blocked(settings, inbox, item(tags=["raingist-done"]))   # moved back in: route again
+    assert pipeline.blocked(settings, inbox, item(tags=["raingist-skip"]))
+    assert pipeline.blocked(settings, inbox, item(tags=["raingist-failed"]))
+    assert not pipeline.blocked(settings, inbox, item(tags=["raingist-failed", "raingist-redo"]))
+    assert pipeline.blocked(settings, acct(), item(tags=["raingist-done"]))   # tag mode unchanged
+
+def test_collection_catalog_paths_and_skips_inbox():
+    class RD:
+        def collections(self):
+            return [{"_id": INBOX, "title": "raingist"}, {"_id": 1, "title": "Food", "description": "eats"},
+                    {"_id": 2, "title": "Recipes", "parent": {"$id": 1}}]
+        def recent_titles(self, cid, n): return [f"t{cid}"]
+    cat = pipeline.collection_catalog(RD(), acct(inbox_collection=INBOX))
+    assert cat == [{"id": 1, "title": "Food", "description": "eats", "samples": ["t1"]},
+                   {"id": 2, "title": "Food / Recipes", "description": "", "samples": ["t2"]}]

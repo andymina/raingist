@@ -53,6 +53,9 @@ def owner_note(note: str) -> str:
             inside = pieces[i + 1] == "start"
     return "\n".join(out)
 
+def strip_reserved(tags: list[str]) -> list[str]:
+    return [t for t in tags if not t.lower().startswith(RESERVED_PREFIX)]
+
 def strip_failure_line(note: str) -> str:
     return "\n".join(l for l in note.splitlines() if not l.startswith(FAIL_MARKER)).rstrip()
 
