@@ -12,8 +12,16 @@ _Avoid_: app, bot, server
 A Raindrop account connected to the Service via OAuth. Its own data is only its tokens, an on/off switch and collection filters. Currently only the owner's.
 _Avoid_: user, tenant, library
 
+**Inbox**:
+The collection an Account processes from (`raingist` for the owner). A Bookmark in it is waiting; leaving it means done.
+_Avoid_: queue, processing box
+
+**Routing**:
+Moving a finished Bookmark out of the Inbox into the collection that already holds similar content, or Unsorted if none does.
+_Avoid_: filing, sorting
+
 **Collection filter**:
-An Account's list of Raindrop collections to include or exclude. Empty means all.
+In tag mode (an Account without an Inbox), the Raindrop collections to include or exclude. Empty means all.
 
 ## Bookmarks
 
@@ -26,7 +34,7 @@ The AI summary block appended to a Bookmark's Note, plus the tags added to it.
 _Avoid_: hydration, annotation
 
 **Processing state**:
-Where a Bookmark stands with the Service: pending, done (`raingist-done`), failed (`raingist-failed`), or opted out (`raingist-skip`).
+Where a Bookmark stands with the Service: pending (in the Inbox), done (routed out of it; `raingist-done` in tag mode), failed (`raingist-failed`), or opted out (`raingist-skip`).
 
 **Owner note**:
 The part of a Bookmark's Note given to the summarizer: the whole Note, or only the spans marked with `$start.` and `$end.`. It steers or explains that Bookmark's Enrichment.

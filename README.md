@@ -1,9 +1,13 @@
 # raingist
 
-A self-hosted service that enriches Raindrop.io bookmarks. When a connected Raindrop account saves a TikTok, the service adds two things within a minute or two, with no manual step:
+A self-hosted service that enriches Raindrop.io bookmarks. Save a TikTok into your **`raingist` collection** and within a minute or two, with no manual step, the service:
 
-- an AI summary appended to the bookmark's **Note**
-- topic **Tags**
+- appends an AI summary to the bookmark's **Note**
+- adds topic **Tags**
+- gives it a descriptive **title** if it only had a placeholder
+- **moves it out** of `raingist`: into an existing collection with similar content, or into Unsorted if none fits
+
+`raingist` is a processing inbox: anything in it is waiting, anything that leaves it is done.
 
 It runs natively on an M1 Mac mini. mlx-whisper handles speech-to-text on the Apple GPU, Apple Vision handles OCR, and Gemini's free tier writes the summaries. Running it costs nothing beyond electricity.
 
@@ -15,12 +19,13 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 launchd (KeepAlive) → raingist serve
   every 60 s (POLL_INTERVAL_SECONDS):
     for each enabled account (DATA_DIR/accounts/*.json, OAuth tokens auto-refreshed)
-      Raindrop API: bookmarks from the last 14 days without a state tag, plus any tagged raingist-redo
+      Raindrop API: bookmarks in the inbox collection, except raingist-failed / raingist-skip
       → extractor (TikTok: video via yt-dlp, slideshow via the post page's JSON)
           → captions, else transcriber (mlx-whisper)
           → OCR (Apple Vision, in a child process with a timeout) for slideshows, or videos tagged raingist-ocr
       → LLM (Gemini, optional Anthropic fallback): summary, takeaways, tags, title
-      → write-back: append note block, merge tags, add raingist-done (or raingist-failed)
+      → write-back, one PUT: append note block, merge tags, drop raingist-* tags, move to the chosen collection
+        (on failure: raingist-failed + reason line, stays in the inbox)
 ```
 
 Each pluggable part is a plain `name → implementation` dict selected in `.env` ([ADR 0004](docs/adr/0004-pluggable-registries.md)):
@@ -123,17 +128,31 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - **Length:** decided by the content, not a fixed count. The only cap is Raindrop's 10,000-character limit per note.
 - The source and model used are logged, not written into the note.
 
+## The inbox and routing
+
+| You want to | Do this |
+|---|---|
+| Process a TikTok | Save it into `raingist`, or drag any existing bookmark in, whatever its age |
+| Redo a summary | Move it back into `raingist` and add `raingist-redo`: the old AI block is replaced |
+| Read on-screen text too | Move it back into `raingist` with `raingist-ocr` and `raingist-redo` |
+| Pick the destination yourself | Ask in its note, e.g. `put this in Recipes` |
+
+- **Where it goes:** the same Gemini call that writes the summary picks a destination. It compares the bookmark with each collection's name, description and 5 most recent bookmark titles (nested collections included, as `Parent / Child`). A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
+- **Moving back in without `raingist-redo`** keeps the existing summary and just re-routes the bookmark.
+- **Failures stay in the inbox**, tagged `raingist-failed` with the reason in the note. So do non-TikToks, untouched. Retries in progress also wait there.
+- Inbox mode is per account (`inbox_collection` in `DATA_DIR/accounts/<id>.json`). The owner's inbox is `raingist` (id 76070344).
+
 ## Tags
 
 | Tag | Set by | Meaning |
 |---|---|---|
-| `raingist-done` | service | Enriched |
 | `raingist-failed` | service | Gave up; the reason is on a `_raingist-failed: …_` line in the note |
-| `raingist-skip` | you | Never process this bookmark |
+| `raingist-skip` | you | Leave this bookmark alone |
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
-| `raingist-redo` | you | Reprocess: the old AI block is replaced, then `raingist-redo` is removed |
+| `raingist-redo` | you | Reprocess: the old AI block is replaced |
+| `raingist-done` | service | Tag mode only (accounts without an inbox): enriched |
 
-All names are configurable (`TAG_*`). The service only adds tags, never removes yours, and prefers your existing tags: one that largely fits wins over a new, more precise one. Typically a bookmark gets 2–4 tags, often with no new ones; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
+All `raingist-*` tags are removed when a bookmark leaves the inbox. All names are configurable (`TAG_*`, must keep the `raingist-` prefix). Topic tags: the service only adds them, never removes yours, and prefers your existing tags: one that largely fits wins over a new, more precise one. Typically a bookmark gets 2–4 tags, often with no new ones; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
 
 ## TikTok: videos vs slideshows
 
@@ -177,11 +196,9 @@ Alerts go to `NOTIFY_URL` (ntfy), at most once every 6 h per alert key. Without 
 - 3 failing bookmarks in a row within one account's cycle
 - each bookmark marked `raingist-failed`
 
-## Collection filters
+## Tag mode and collection filters
 
-Edit `include_collections` / `exclude_collections` (lists of Raindrop collection ids) in `DATA_DIR/accounts/<id>.json`. An empty list means all collections. Filters match a bookmark's own collection exactly, so sub-collections must be listed separately. Unsorted is collection `-1`. Reconnecting keeps the filters.
-
-The owner account currently processes only the `raingist` collection (`include_collections: [76070344]`).
+An account without `inbox_collection` runs in tag mode: it processes TikToks from the last 14 days anywhere in the library, marks them `raingist-done`, and leaves them where they are. `include_collections` / `exclude_collections` (lists of collection ids) narrow that down. Filters match a bookmark's own collection exactly, so sub-collections must be listed separately; Unsorted is `-1`. Reconnecting keeps all of these settings.
 
 ## Hosting later
 
@@ -251,6 +268,7 @@ uv lock --upgrade-package yt-dlp && uv sync && uv run raingist restart
 | Alert `account-file:<id>` | Corrupt account file | Run `uv run raingist accounts`, then reconnect |
 | Alert "… not mounted" | T7 disconnected | Reconnect it; the next cycle resumes |
 | `connect` fails "address already in use" | Port 8765 is busy | Free the port, or change `RAINDROP_REDIRECT_URI` and the Raindrop app setting to match |
-| Nothing processed | Service not running, Mac asleep or logged out, not a TikTok, > 14 days old, has a state tag, outside the collection filter, account disabled | `uv run raingist status` (shows service state and filters); `uv run raingist restart`; add `raingist-redo` |
+| Bookmark sits in `raingist` | Not a TikTok, tagged `raingist-failed` / `raingist-skip`, waiting for a retry, or the service isn't running (Mac asleep or logged out) | `uv run raingist status`; the note's `_raingist-failed:` line says why; add `raingist-redo` to retry a failure |
+| Went to Unsorted, not a collection | No collection clearly matched | Move it yourself, or ask in its note (`put this in Recipes`) and redo it |
 | `status` says the service is NOT RUNNING | It crashed during startup, e.g. a config error in `.env` | `launchctl print gui/$(id -u)/com.raingist.serve` shows the last exit code; run `uv run raingist once` to see the error |
-| Want OCR on a video that's already done | Video OCR is opt-in | Add `raingist-ocr` and `raingist-redo` |
+| Want OCR on a video that's already done | Video OCR is opt-in | Move it back into `raingist` with `raingist-ocr` and `raingist-redo` |

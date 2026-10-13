@@ -24,6 +24,7 @@ Python is pyenv 3.13 with uv set to system interpreters only (ADR 0005). Run eve
 ## Invariants
 
 - **The note is append-only.** The owner's text stays byte-for-byte; the service only appends or replaces its own block (the `**AI summary**` line, one summary line, then `- ` takeaway lines; `strip_ai_block` finds the end by that shape, so keep summary and takeaways one line each) and its `_raingist-failed: …_` line.
+- **In inbox mode, location is state.** A bookmark in the account's `inbox_collection` is pending; done means one PUT that writes the note, strips every `raingist-*` tag and sets `collection`. Failures stay in the inbox (ADR 0007).
 - **The `raingist-` tag prefix is reserved** for state and control tags, which are configurable but must keep the prefix. `choose_tags` drops any generated tag in that namespace.
 - **Failure classification decides retry.** Raise `TransientFailure` for anything that might work later (layout changes, timeouts, quota) and `PermanentFailure` only when the post itself is gone or private. A wrong permanent failure tags the bookmark `raingist-failed` for good.
 - **Fail loud on config.** Validate in `settings.load_settings` and exit with a clear message; registries are plain dicts checked there (ADR 0004).
