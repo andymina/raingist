@@ -31,8 +31,8 @@ def item(rid=10, link=TT, tags=(), note="", cid=5):
 def ok(monkeypatch):
     monkeypatch.setattr(pipeline, "extract", lambda s, ctype, it, want_ocr: Extraction(text="t", source="captions"))
     calls = []
-    def summarize(s, it, ctype, ex, tags, instructions=""):
-        calls.append(instructions)
+    def summarize(s, it, ctype, ex, tags, owner_note=""):
+        calls.append(owner_note)
         return Summary(summary="New summary.", key_takeaways=["k"], tags=["Cooking"], title="A title"), "m"
     monkeypatch.setattr(pipeline, "summarize", summarize)
     return calls
@@ -82,9 +82,14 @@ def test_permanent_failed(settings, tmp_path, monkeypatch):
     assert fields["note"].startswith("mine\n\n_ai-failed: Video is private")
     assert fields["tags"] == ["ai-failed"]
 
-def test_note_instructions_forwarded(settings, tmp_path, ok):
+def test_owner_note_forwarded(settings, tmp_path, ok):
     note = "keep this $start. list every tool $end."
     rd = FakeRaindrop([item(note=note)])
     assert run(settings, tmp_path, rd) == "done"
     assert ok == ["list every tool"]
     assert rd.updates[0][1]["note"].startswith(note + "\n\n**AI summary**")   # note itself untouched
+
+def test_whole_note_forwarded_without_tokens(settings, tmp_path, ok):
+    rd = FakeRaindrop([item(note="Claude skills")])
+    run(settings, tmp_path, rd)
+    assert ok == ["Claude skills"]

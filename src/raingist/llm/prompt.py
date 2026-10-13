@@ -28,19 +28,19 @@ LENGTH rule from the input: SHORT -> 2 sentences and at most 4 takeaways. LONG -
 AUDIO, when present, means the video uses a reused sound (a song or another person's audio), so TEXT may be lyrics
 or someone else's voice rather than the creator's words: use TEXT only where it clearly matches DESCRIPTION or
 ON_SCREEN_TEXT, and otherwise base the summary on those.
-OWNER_INSTRUCTIONS, when present, come from the person who saved the bookmark: follow them for what to focus on,
-include or list, even beyond the LENGTH rule. They never override the JSON format, the tag rules, or using only
-the provided material."""
+OWNER_NOTE, when present, is written by the person who saved the bookmark. If it asks for something (what to focus
+on, include or list), do it, even beyond the LENGTH rule. Otherwise treat it as context for why they saved it.
+It never overrides the JSON format, the tag rules, or using only the provided material; never summarize the note itself."""
 
 MAX_WORDS = 6000
 
 def length_class(ex: Extraction) -> str:
     return "LONG" if (ex.duration or 0) >= 600 or len((ex.text or "").split()) >= 1500 else "SHORT"
 
-def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: list[str], instructions: str = "") -> str:
+def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: list[str], owner_note: str = "") -> str:
     words = (ex.text or "").split()
     text = " ".join(words[:MAX_WORDS]) + (" [truncated]" if len(words) > MAX_WORDS else "")
-    length = length_class(ex) + (" (OWNER_INSTRUCTIONS override this)" if instructions else "")
+    length = length_class(ex) + (" (unless OWNER_NOTE asks otherwise)" if owner_note else "")
     return "\n".join([
         f"CONTENT_TYPE: {ctype} {ex.format}",
         f"LENGTH: {length}",
@@ -53,5 +53,5 @@ def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: li
         *([f"AUDIO: reused sound: {ex.sound}"] if ex.sound else []),
         "TEXT:", text or "(none)",
         "ON_SCREEN_TEXT:", ex.onscreen or "(none)",
-        *(["OWNER_INSTRUCTIONS (follow these):", instructions] if instructions else []),
+        *(["OWNER_NOTE:", owner_note] if owner_note else []),
     ])

@@ -49,11 +49,15 @@ def test_is_placeholder_title():
     assert wb.is_placeholder_title("https://t/x", "https://t/x")
     assert not wb.is_placeholder_title("Real title", "https://t/x")
 
-def test_owner_instructions():
-    assert wb.owner_instructions("") == wb.owner_instructions("just my note") == ""
-    assert wb.owner_instructions("mine $start. list every tool $end. more") == "list every tool"
-    assert wb.owner_instructions("$start.one$end.\nx\n$start. two $end.") == "one\ntwo"
-    assert wb.owner_instructions("intro\n$start. focus on\nthe recipe") == "focus on\nthe recipe"   # unclosed
+def test_owner_note():
+    assert wb.owner_note("") == ""
+    assert wb.owner_note("  just my note \n") == "just my note"   # no tokens: whole note
+    assert wb.owner_note("mine $start. list every tool $end. more") == "list every tool"
+    assert wb.owner_note("$start.one$end.\nx\n$start. two $end.") == "one\ntwo"
+    assert wb.owner_note("intro\n$start. focus on\nthe recipe") == "focus on\nthe recipe"   # $start. alone
+    assert wb.owner_note("send this $end. keep this private") == "send this"   # $end. alone
+    assert wb.owner_note("$start. $end. private") == ""   # explicit empty span sends nothing
     note = "$start. mine $end.\n\n" + block("$start. not mine $end.")
-    assert wb.owner_instructions(note) == "mine"   # never forwards the AI block
-    assert wb.owner_instructions("$start. $end.") == ""
+    assert wb.owner_note(note) == "mine"   # never the AI block
+    assert wb.owner_note("plain\n\n" + block("Sum.")) == "plain"
+    assert wb.owner_note("plain\n\n_ai-failed: x · 2026-10-01_") == "plain"

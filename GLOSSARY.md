@@ -28,9 +28,9 @@ _Avoid_: hydration, annotation
 **Processing state**:
 Where a Bookmark stands with the Service: pending, done (`ai-done`), failed (`ai-failed`), or opted out (`ai-skip`).
 
-**Owner instructions**:
-The text in a Bookmark's Note between `$start.` and `$end.`, passed to the summarizer to steer that Bookmark's Enrichment.
-_Avoid_: prompt, note prompt
+**Owner note**:
+The part of a Bookmark's Note given to the summarizer: the whole Note, or only the spans marked with `$start.` and `$end.`. It steers or explains that Bookmark's Enrichment.
+_Avoid_: owner instructions, prompt, note prompt
 
 **Control tag**:
 A tag a person adds to steer processing: `ai-ocr` (read the on-screen text of a video) or `ai-redo` (replace the Enrichment).

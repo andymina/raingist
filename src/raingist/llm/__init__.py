@@ -9,14 +9,14 @@ log = logging.getLogger(__name__)
 PROVIDERS = {"gemini": gemini_provider.generate, "anthropic": anthropic_provider.generate}
 DEFAULT_MODELS = {"gemini": "gemini-3.5-flash-lite", "anthropic": "claude-haiku-5-5"}
 MAX_TAKEAWAYS = {"SHORT": 4, "LONG": 5}
-MAX_INSTRUCTED_TAKEAWAYS = 15   # owner instructions may ask for a full list
+MAX_NOTE_TAKEAWAYS = 15   # an owner note may ask for a full list
 
 def summarize(s, item: dict, ctype: str, ex: Extraction, existing_tags: list[str],
-              instructions: str = "") -> tuple[Summary, str]:
+              owner_note: str = "") -> tuple[Summary, str]:
     """Try LLM_PROVIDERS in order. Returns (summary, model). Raises TransientFailure if none work."""
     system = SYSTEM_PROMPT.format(language=s.summary_language)
-    message = build_user_message(item, ctype, ex, existing_tags, instructions)
-    cap = MAX_INSTRUCTED_TAKEAWAYS if instructions else MAX_TAKEAWAYS[length_class(ex)]
+    message = build_user_message(item, ctype, ex, existing_tags, owner_note)
+    cap = MAX_NOTE_TAKEAWAYS if owner_note else MAX_TAKEAWAYS[length_class(ex)]
     last: Exception | None = None
     for name in s.llm_providers:
         model = s.llm_models[name]

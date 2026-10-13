@@ -33,12 +33,23 @@ def merge_tags(item_tags: list[str], chosen: list[str], state_tag: str, drop: fr
         seen.add(t.lower()); out.append(t)
     return out
 
-INSTRUCTIONS = re.compile(r"\$start\.(.*?)(?:\$end\.|\Z)", re.S)
+NOTE_TOKEN = re.compile(r"\$(start|end)\.")
 
-def owner_instructions(note: str) -> str:
-    """Text between $start. and $end. in the person's own note; an unclosed $start. runs to the end."""
+def owner_note(note: str) -> str:
+    """The part of the person's own note sent to the summarizer: the whole note when it has no
+    $start./$end. tokens, else only the spans between them ($start. alone runs to the end,
+    a leading $end. alone starts at the beginning). Never the AI block or failure line."""
     own = strip_failure_line(strip_ai_block(note or ""))
-    return "\n".join(m.strip() for m in INSTRUCTIONS.findall(own) if m.strip())
+    pieces = NOTE_TOKEN.split(own)   # [text, "start"|"end", text, ...]
+    if len(pieces) == 1:
+        return own.strip()
+    out, inside = [], pieces[1] == "end"
+    for i in range(0, len(pieces), 2):
+        if inside and pieces[i].strip():
+            out.append(pieces[i].strip())
+        if i + 1 < len(pieces):
+            inside = pieces[i + 1] == "start"
+    return "\n".join(out)
 
 def strip_failure_line(note: str) -> str:
     return "\n".join(l for l in note.splitlines() if not l.startswith(FAIL_MARKER)).rstrip()
