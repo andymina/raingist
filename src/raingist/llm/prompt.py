@@ -28,9 +28,13 @@ Searchability: use the exact names and terms someone would later type to find th
 teams, brands, places, acronyms, jargon and buzzwords, spelled as in the material. Prefer the specific name to a
 generic description.
 title: at most 80 characters, specific, keyword-first.
-Tags: reuse a tag from EXISTING_TAGS when it fits; otherwise create at most 6 new tags. Tags are lowercase,
-hyphenated, ASCII, broad reusable topics (for example "cooking", "swift", "personal-finance"), never one-off phrases
-or names, and never starting with "raingist-".
+Tags: 2-4 tags is typical. Reuse EXISTING_TAGS first: an existing tag that largely fits beats a new, more precise
+one. Create a new tag only for a main topic no existing tag covers; zero new tags is normal, 6 is the hard maximum.
+Tags are lowercase, hyphenated, ASCII, broad reusable topics (for example "cooking", "swift", "personal-finance"),
+never one-off phrases or names, and never starting with "raingist-".
+Recipes: key_takeaways are the full recipe, in order: each ingredient with its measurement, then each step with its
+times (cooking, marinating, resting), temperatures, quantities and pan or heat settings. Collect these from every
+part of the material, the DESCRIPTION (caption) included, where they often are.
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]), title (string),

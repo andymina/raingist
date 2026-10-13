@@ -13,7 +13,7 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 
 ```
 launchd (KeepAlive) → raingist serve
-  every POLL_INTERVAL_SECONDS:
+  every 60 s (POLL_INTERVAL_SECONDS):
     for each enabled account (DATA_DIR/accounts/*.json, OAuth tokens auto-refreshed)
       Raindrop API: bookmarks from the last 14 days without a state tag, plus any tagged raingist-redo
       → extractor (TikTok: video via yt-dlp, slideshow via the post page's JSON)
@@ -103,7 +103,7 @@ Uninstall the service: `launchctl bootout gui/$(id -u)/com.raingist.serve`
 
 ## Polling
 
-The service checks Raindrop every `POLL_INTERVAL_SECONDS` (default 60). It processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account per cycle, and only bookmarks created in the last `POLL_LOOKBACK_DAYS` (14). An idle cycle costs 2 Raindrop API requests, against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
+The service checks Raindrop **every 60 seconds** (`POLL_INTERVAL_SECONDS=60` in `.env`; change it, then run `uv run raingist restart`). It processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account per cycle, and only bookmarks created in the last `POLL_LOOKBACK_DAYS` (14). An idle cycle costs 2 Raindrop API requests, against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
 
 ## The AI block
 
@@ -119,6 +119,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - **Summary:** one or two terse sentences that open with the subject itself. The creator who posted it is left out unless the post is about them.
 - **Takeaways:** one line per distinct point, written `Name: what it is or does` for lists.
 - **Searchable wording:** exact names, tools, people, brands and buzzwords from the source are kept, so free-text search finds the bookmark later.
+- **Recipes:** the takeaways are the full recipe in order: ingredients with measurements, then steps with cooking and marinating times, temperatures and quantities, taken from the caption too.
 - **Length:** decided by the content, not a fixed count. The only cap is Raindrop's 10,000-character limit per note.
 - The source and model used are logged, not written into the note.
 
@@ -132,7 +133,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
 | `raingist-redo` | you | Reprocess: the old AI block is replaced, then `raingist-redo` is removed |
 
-All names are configurable (`TAG_*`). The service only adds tags: it reuses your existing tags, adds at most 6 new `lowercase-hyphen` ones, and never removes yours. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
+All names are configurable (`TAG_*`). The service only adds tags, never removes yours, and prefers your existing tags: one that largely fits wins over a new, more precise one. Typically a bookmark gets 2–4 tags, often with no new ones; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
 
 ## TikTok: videos vs slideshows
 
