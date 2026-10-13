@@ -22,6 +22,8 @@ summary: one short sentence, two at most, stating the substance itself, like a n
 ("This video highlights...", "The creator shows...").
 key_takeaways: one terse line per distinct point or item in the material, as many as it has and no more. When the
 material lists things, write "Name: what it is or does". Each line adds something the summary does not.
+Write about the content only. The creator or account that posted it stays out of the summary, takeaways and title,
+unless the post is about them.
 Searchability: use the exact names and terms someone would later type to find this: products, tools, repos, people,
 teams, brands, places, acronyms, jargon and buzzwords, spelled as in the material. Prefer the specific name to a
 generic description.
