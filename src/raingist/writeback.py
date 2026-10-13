@@ -33,6 +33,13 @@ def merge_tags(item_tags: list[str], chosen: list[str], state_tag: str, drop: fr
         seen.add(t.lower()); out.append(t)
     return out
 
+INSTRUCTIONS = re.compile(r"\$start\.(.*?)(?:\$end\.|\Z)", re.S)
+
+def owner_instructions(note: str) -> str:
+    """Text between $start. and $end. in the person's own note; an unclosed $start. runs to the end."""
+    own = strip_failure_line(strip_ai_block(note or ""))
+    return "\n".join(m.strip() for m in INSTRUCTIONS.findall(own) if m.strip())
+
 def strip_failure_line(note: str) -> str:
     return "\n".join(l for l in note.splitlines() if not l.startswith(FAIL_MARKER)).rstrip()
 

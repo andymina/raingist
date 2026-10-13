@@ -68,6 +68,16 @@ def image_urls(item: dict) -> list[str]:
             urls.append(next((u for u in variants if "jpeg" in u), variants[0]))
     return urls
 
+def reused_sound(info: dict) -> str | None:
+    """'<track> by <artists>' when the video's sound is not the creator's own (a song or someone else's audio)."""
+    track, artists = info.get("track"), info.get("artists") or []
+    creator = (info.get("channel") or "").strip().lower()
+    if not track or not artists:
+        return None   # unknown: treat as the creator's own
+    # yt-dlp splits the sound author on ", " / " & ", so compare the rejoined names too
+    names = {a.strip().lower() for a in artists} | {", ".join(artists).lower(), " & ".join(artists).lower()}
+    return None if creator in names else f"{track} by {', '.join(artists)}"
+
 def extract(s, item: dict, workdir: Path, want_ocr: bool) -> Extraction:
     with _client(s.tiktok_cookies_file) as client:
         url, html = fetch_page(client, item["link"])
@@ -115,7 +125,9 @@ def extract_video(s, url: str, workdir: Path, want_ocr: bool) -> Extraction:
     info = ytdl.run(url, workdir, opts)
     ex = Extraction(author=info.get("uploader") or info.get("channel"),
                     description=info.get("description") or oembed(url).get("title"),
-                    duration=info.get("duration"))
+                    duration=info.get("duration"), sound=reused_sound(info))
+    if ex.sound:
+        log.info("reused sound: %s", ex.sound)
     video = next(iter(sorted(workdir.glob("*.mp4"))), None)
     if not video:
         raise TransientFailure("yt-dlp produced no video file")

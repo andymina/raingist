@@ -36,3 +36,18 @@ def test_takeaways_capped_by_length(settings, monkeypatch):
     s = two(settings)
     assert len(llm.summarize(s, ITEM, "tiktok", Extraction(duration=60), [])[0].key_takeaways) == 4
     assert len(llm.summarize(s, ITEM, "tiktok", Extraction(duration=900), [])[0].key_takeaways) == 5
+
+def test_owner_instructions_lift_cap(settings, monkeypatch):
+    many = Summary(summary="ok", key_takeaways=[str(i) for i in range(20)])
+    monkeypatch.setattr(llm, "PROVIDERS", {"a": lambda *_: many.model_copy(deep=True), "b": None})
+    out = llm.summarize(two(settings), ITEM, "tiktok", Extraction(duration=60), [], "list every prompt")[0]
+    assert len(out.key_takeaways) == llm.MAX_INSTRUCTED_TAKEAWAYS
+
+def test_user_message_optional_sections():
+    from raingist.llm.prompt import build_user_message
+    plain = build_user_message(ITEM, "tiktok", Extraction(), [])
+    assert "AUDIO:" not in plain and "OWNER_INSTRUCTIONS:" not in plain
+    msg = build_user_message(ITEM, "tiktok", Extraction(sound="Big Fun by Heathers"), [], "list the tools")
+    assert "AUDIO: reused sound: Big Fun by Heathers" in msg
+    assert msg.endswith("OWNER_INSTRUCTIONS (follow these):\nlist the tools")
+    assert "LENGTH: SHORT (OWNER_INSTRUCTIONS override this)" in msg

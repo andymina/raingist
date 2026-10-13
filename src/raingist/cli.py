@@ -9,6 +9,7 @@ from .pipeline import run_cycle, process_item, extract
 from .extract import detect
 from .llm import summarize
 from .notify import Alerts
+from .writeback import owner_instructions
 
 log = logging.getLogger("raingist")
 FMT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -74,14 +75,14 @@ def cmd_process(s, args):
 def cmd_test(s, args):
     """Extract + summarize one URL. No Raindrop access; cache goes to work/test-cache."""
     require_data(s)
-    item = {"_id": 0, "link": args.url, "title": "", "excerpt": "", "note": "", "tags": []}
+    item = {"_id": 0, "link": args.url, "title": "", "excerpt": "", "note": args.note, "tags": []}
     ctype = detect(s, args.url)
     if ctype is None:
         sys.exit(f"unsupported URL (enabled extractors: {', '.join(s.enabled_extractors)})")
     t0 = time.monotonic()
     ex = extract(s, ctype, item, want_ocr=args.ocr, cache_dir=s.work_dir / "test-cache")
     print(json.dumps({"content_type": ctype, **ex.to_dict()}, indent=1, ensure_ascii=False)[:4000])
-    summary, model = summarize(s, item, ctype, ex, [])
+    summary, model = summarize(s, item, ctype, ex, [], owner_instructions(args.note))
     print(model)
     print(summary.model_dump_json(indent=1))
     print(f"elapsed: {time.monotonic() - t0:.1f}s")
@@ -128,7 +129,7 @@ def main():
     sub.add_parser("serve")
     o = sub.add_parser("once"); o.add_argument("--account", type=int); o.add_argument("--dry-run", action="store_true"); o.add_argument("--limit", type=int)
     p = sub.add_parser("process"); p.add_argument("--account", type=int, required=True); p.add_argument("--id", type=int, required=True); p.add_argument("--dry-run", action="store_true")
-    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true")
+    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note, e.g. '$start. list every tool $end.'")
     sub.add_parser("connect")
     a = sub.add_parser("accounts"); a.add_argument("action", nargs="?", choices=["list", "enable", "disable", "disconnect"], default="list"); a.add_argument("id", nargs="?", type=int)
     sub.add_parser("status")

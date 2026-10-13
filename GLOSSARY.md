@@ -28,6 +28,10 @@ _Avoid_: hydration, annotation
 **Processing state**:
 Where a Bookmark stands with the Service: pending, done (`ai-done`), failed (`ai-failed`), or opted out (`ai-skip`).
 
+**Owner instructions**:
+The text in a Bookmark's Note between `$start.` and `$end.`, passed to the summarizer to steer that Bookmark's Enrichment.
+_Avoid_: prompt, note prompt
+
 **Control tag**:
 A tag a person adds to steer processing: `ai-ocr` (read the on-screen text of a video) or `ai-redo` (replace the Enrichment).
 _Avoid_: flag, command tag
@@ -40,6 +44,10 @@ _Avoid_: scraper, downloader, handler
 
 **Extraction**:
 The text gathered for one Bookmark: transcript, on-screen text, and metadata. Its **Source** is `captions`, `whisper`, `ocr` or `metadata`; its **Format** is `video` or `slideshow`.
+
+**Reused sound**:
+A TikTok video's audio that is not the creator's own: a song, or another person's sound. Its transcript is not trusted as the creator's words.
+_Avoid_: trending audio, borrowed audio
 
 **Slideshow**:
 A TikTok photo post. Its text comes from the on-screen text of every image plus the caption.

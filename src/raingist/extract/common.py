@@ -13,6 +13,7 @@ class Extraction:
     author: str | None = None
     description: str | None = None
     duration: float | None = None
+    sound: str | None = None  # "<track> by <artists>" when the audio is a reused sound, not the creator's own
 
     def to_dict(self):
         return asdict(self)

@@ -30,8 +30,12 @@ def item(rid=10, link=TT, tags=(), note="", cid=5):
 @pytest.fixture
 def ok(monkeypatch):
     monkeypatch.setattr(pipeline, "extract", lambda s, ctype, it, want_ocr: Extraction(text="t", source="captions"))
-    monkeypatch.setattr(pipeline, "summarize", lambda s, it, ctype, ex, tags: (
-        Summary(summary="New summary.", key_takeaways=["k"], tags=["Cooking"], title="A title"), "m"))
+    calls = []
+    def summarize(s, it, ctype, ex, tags, instructions=""):
+        calls.append(instructions)
+        return Summary(summary="New summary.", key_takeaways=["k"], tags=["Cooking"], title="A title"), "m"
+    monkeypatch.setattr(pipeline, "summarize", summarize)
+    return calls
 
 def run(settings, tmp_path, rd, rid=10):
     return pipeline.process_item(settings, acct(), rd, Attempts(tmp_path / "a.json", settings.retry_backoff), rid, [])
@@ -77,3 +81,10 @@ def test_permanent_failed(settings, tmp_path, monkeypatch):
     fields = rd.updates[0][1]
     assert fields["note"].startswith("mine\n\n_ai-failed: Video is private")
     assert fields["tags"] == ["ai-failed"]
+
+def test_note_instructions_forwarded(settings, tmp_path, ok):
+    note = "keep this $start. list every tool $end."
+    rd = FakeRaindrop([item(note=note)])
+    assert run(settings, tmp_path, rd) == "done"
+    assert ok == ["list every tool"]
+    assert rd.updates[0][1]["note"].startswith(note + "\n\n**AI summary**")   # note itself untouched

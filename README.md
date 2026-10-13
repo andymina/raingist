@@ -118,7 +118,24 @@ All names are configurable (`TAG_*`). The service only adds tags: it reuses your
 - **Videos:** captions via yt-dlp, else Whisper. Frame OCR runs only with `ai-ocr`.
 - **Slideshows** (`/photo/` posts): the image URLs and caption come from the post page's embedded JSON. Every image (≤ 35) is OCR'd and nothing is transcribed. If OCR finds no text, the summary is built from the caption alone with `confidence: low`.
 
+- **Reused sounds:** when a video's sound isn't the creator's own (a song, or someone else's audio), the summarizer is told so. Any transcript is then treated as possibly lyrics or another person's voice, and the caption and on-screen text take priority. Detection compares the sound's author with the creator's name.
+
 Bookmarks from other sites are left untouched and untagged, so a future extractor can pick them up.
+
+## Steering a summary from the note
+
+Put instructions for the summarizer in the bookmark's note between `$start.` and `$end.`:
+
+```
+Claude skills $start. List every tool by name with one line on what it does. $end.
+```
+
+- Only the text between the tokens is sent; the rest of your note stays private.
+- Multiple pairs are joined. An unclosed `$start.` runs to the end of the note.
+- The note itself is never changed; the AI block is appended below it.
+- Instructions can override the default length (up to 15 takeaways). They can't change the tag rules, and they can't make the summary go beyond the source material.
+- To apply new instructions to an already-processed bookmark, add `ai-redo`.
+- To try instructions without touching Raindrop: `uv run raingist test --url <url> --note '$start. … $end.'`
 
 ## Alerts
 

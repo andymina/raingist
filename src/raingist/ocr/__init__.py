@@ -3,7 +3,7 @@ from pathlib import Path
 from . import vision_backend
 
 log = logging.getLogger(__name__)
-MAX_CHARS = 1500
+MAX_CHARS = 8000   # an 11-image slideshow of prompts runs ~5,000 chars
 MAX_FRAMES = 60
 
 # name -> fn(image_path) -> list of text lines. Linux hosting: add a Tesseract backend here.

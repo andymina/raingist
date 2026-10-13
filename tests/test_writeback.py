@@ -48,3 +48,12 @@ def test_is_placeholder_title():
     assert wb.is_placeholder_title("TikTok - Make Your Day", "https://t/x")
     assert wb.is_placeholder_title("https://t/x", "https://t/x")
     assert not wb.is_placeholder_title("Real title", "https://t/x")
+
+def test_owner_instructions():
+    assert wb.owner_instructions("") == wb.owner_instructions("just my note") == ""
+    assert wb.owner_instructions("mine $start. list every tool $end. more") == "list every tool"
+    assert wb.owner_instructions("$start.one$end.\nx\n$start. two $end.") == "one\ntwo"
+    assert wb.owner_instructions("intro\n$start. focus on\nthe recipe") == "focus on\nthe recipe"   # unclosed
+    note = "$start. mine $end.\n\n" + block("$start. not mine $end.")
+    assert wb.owner_instructions(note) == "mine"   # never forwards the AI block
+    assert wb.owner_instructions("$start. $end.") == ""

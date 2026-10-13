@@ -49,9 +49,12 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
         return "noop"
     note = writeback.strip_ai_block(item.get("note", "")) if redo else item.get("note", "")
     drop = s.state_tags | {s.tag_redo}
+    instructions = writeback.owner_instructions(note)
+    if instructions:
+        log.info("[%s] item %s: forwarding %d chars of owner instructions", acct.id, rid, len(instructions))
     try:
         ex = extract(s, ctype, item, want_ocr=s.tag_ocr in tags)
-        summary, model = summarize(s, item, ctype, ex, existing_tags)
+        summary, model = summarize(s, item, ctype, ex, existing_tags, instructions)
     except PermanentFailure as e:
         attempts.clear(rid)
         return _finish(s, acct, rd, item, s.tag_failed, drop, dry_run, note=writeback.merge_failure(note, str(e), today()))
