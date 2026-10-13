@@ -1,4 +1,4 @@
-import argparse, json, logging, sys, time, webbrowser
+import argparse, datetime as dt, json, logging, os, subprocess, sys, time, webbrowser
 from logging.handlers import RotatingFileHandler
 from .settings import load_settings, data_ready
 from .accounts import AccountError, store, connect, access_token
@@ -12,6 +12,7 @@ from .notify import Alerts
 from .writeback import owner_note
 
 log = logging.getLogger("raingist")
+LAUNCHD_LABEL = "com.raingist.serve"   # matches launchd/agent.plist.in
 FMT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 _file_handler: RotatingFileHandler | None = None
 
@@ -58,7 +59,34 @@ def cmd_serve(s, args):
             except Exception as e:   # keep serving; the alert makes it visible
                 log.exception("cycle failed")
                 alerts.send("cycle", f"cycle failed: {e}"[:300])
-        time.sleep(max(5, s.poll_interval - (time.monotonic() - start)))
+        delay = max(5, s.poll_interval - (time.monotonic() - start))
+        write_heartbeat(s, delay)
+        time.sleep(delay)
+
+def heartbeat_path(s):
+    return s.state_dir / "serve.json"
+
+def write_heartbeat(s, delay: float) -> None:
+    """Record when serve polls next, for `raingist status`. Skipped while T7 is unplugged."""
+    if not s.state_dir.exists():
+        return
+    now = dt.datetime.now().astimezone()
+    heartbeat_path(s).write_text(json.dumps({"pid": os.getpid(), "updated_at": now.isoformat(),
+                                             "next_poll_at": (now + dt.timedelta(seconds=delay)).isoformat()}))
+
+def service_line(s) -> str:
+    p = heartbeat_path(s)
+    if not p.exists():
+        return "service: never ran (install with ./launchd/install.sh)"
+    hb = json.loads(p.read_text())
+    try:
+        os.kill(hb["pid"], 0)
+    except ProcessLookupError:
+        return f"service: NOT RUNNING (pid {hb['pid']} gone; last seen {hb['updated_at'][:19]})"
+    nxt = dt.datetime.fromisoformat(hb["next_poll_at"])
+    secs = (nxt - dt.datetime.now().astimezone()).total_seconds()
+    when = f"in {secs:.0f}s" if secs >= 0 else "now (cycle running)"
+    return f"service: running (pid {hb['pid']}), next poll at {nxt:%H:%M:%S} ({when})"
 
 def cmd_once(s, args):
     require_data(s)
@@ -115,6 +143,7 @@ def cmd_accounts(s, args):
 
 def cmd_status(s, args):
     require_data(s)
+    print(service_line(s))
     for aid in store(s).ids(s):
         acct = load_account_or_exit(s, aid)
         rd = Raindrop(access_token(s, acct))
@@ -127,6 +156,11 @@ def cmd_status(s, args):
         print("   last cycle:", status.read_text().strip() if status.exists() else "never")
         print("   retrying:", json.dumps(attempts.data))
 
+def cmd_restart(s, args):
+    """Restart the launchd agent (pick up code or .env changes)."""
+    subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"], check=True)
+    print(f"restarted {LAUNCHD_LABEL}")
+
 def main():
     ap = argparse.ArgumentParser(prog="raingist")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -137,6 +171,7 @@ def main():
     sub.add_parser("connect")
     a = sub.add_parser("accounts"); a.add_argument("action", nargs="?", choices=["list", "enable", "disable", "disconnect"], default="list"); a.add_argument("id", nargs="?", type=int)
     sub.add_parser("status")
+    sub.add_parser("restart", help="restart the background service after code or .env changes")
     args = ap.parse_args()
     if args.cmd == "accounts" and args.action != "list" and args.id is None:
         ap.error(f"accounts {args.action} needs an account id")
@@ -144,4 +179,4 @@ def main():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     s = load_settings()
     {"serve": cmd_serve, "once": cmd_once, "process": cmd_process, "test": cmd_test,
-     "connect": cmd_connect, "accounts": cmd_accounts, "status": cmd_status}[args.cmd](s, args)
+     "connect": cmd_connect, "accounts": cmd_accounts, "status": cmd_status, "restart": cmd_restart}[args.cmd](s, args)
