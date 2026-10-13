@@ -3,7 +3,7 @@ import httpx
 
 BASE = "https://api.raindrop.io/rest/v1"
 AUTHORIZE_URL = "https://raindrop.io/oauth/authorize"
-TOKEN_URL = "https://raindrop.io/oauth/access_token"
+TOKEN_URL = "https://api.raindrop.io/v1/oauth/access_token"   # raindrop.io/oauth/access_token 307s here
 
 class RaindropError(Exception): ...
 
@@ -13,11 +13,13 @@ def authorize_url(client_id: str, redirect_uri: str) -> str:
 def token_request(payload: dict) -> dict:
     """POST to the OAuth token endpoint. Returns {access_token, refresh_token, expires_in, ...}."""
     r = httpx.post(TOKEN_URL, json=payload, timeout=30)
-    if r.status_code >= 400:
-        raise RaindropError(f"oauth {payload['grant_type']} -> {r.status_code}: {r.text[:200]}")
-    data = r.json()
-    if not data.get("access_token"):
-        raise RaindropError(f"oauth {payload['grant_type']}: no access_token in response")
+    try:
+        data = r.json()
+    except ValueError:
+        raise RaindropError(f"oauth {payload['grant_type']} -> {r.status_code}, not JSON: {r.text[:200]}") from None
+    if r.status_code >= 400 or not data.get("access_token"):   # errors can come back as 200 + result:false
+        reason = data.get("errorMessage") or data.get("error") or "no access_token in response"
+        raise RaindropError(f"oauth {payload['grant_type']} -> {r.status_code}: {reason}")
     return data
 
 class Raindrop:

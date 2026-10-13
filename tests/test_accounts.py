@@ -1,4 +1,5 @@
 import os, stat, time
+import httpx
 import pytest
 import raingist.accounts as accounts
 from raingist.accounts import AccountError, store
@@ -57,3 +58,15 @@ def test_authorize_url():
     assert authorize_url("cid", "http://localhost:8765/callback") == (
         "https://raindrop.io/oauth/authorize?response_type=code&client_id=cid"
         "&redirect_uri=http%3A%2F%2Flocalhost%3A8765%2Fcallback")
+
+@pytest.mark.parametrize("response,match", [
+    (httpx.Response(200, json={"result": False, "status": 400, "errorMessage": "client_id or client_secret is invalid"}),
+     "client_id or client_secret is invalid"),
+    (httpx.Response(307, text="https://api.raindrop.io/v1/oauth/access_token"), "not JSON"),
+    (httpx.Response(400, json={"error": "bad_authorization_code"}), "bad_authorization_code"),
+])
+def test_token_request_errors(monkeypatch, response, match):
+    from raingist import raindrop
+    monkeypatch.setattr(raindrop.httpx, "post", lambda *a, **k: response)
+    with pytest.raises(raindrop.RaindropError, match=match):
+        raindrop.token_request({"grant_type": "authorization_code"})

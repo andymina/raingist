@@ -15,7 +15,7 @@ def wait_for_code(redirect_uri: str, timeout: int = 300) -> str:
             result["code"] = params.get("code", [None])[0]
             result["error"] = params.get("error", [None])[0]
             self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers()
-            self.wfile.write(b"raingist: account connected, you can close this tab." if result["code"]
+            self.wfile.write(b"raingist: authorization received. Check the terminal, then close this tab." if result["code"]
                              else b"raingist: authorization failed, check the terminal.")
 
         def log_message(self, *a):   # keep the code out of logs
