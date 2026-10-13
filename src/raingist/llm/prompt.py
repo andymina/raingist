@@ -19,7 +19,7 @@ Do not add facts, names, numbers, or claims that are not in the material. If the
 say so in the summary, keep takeaways minimal, and set confidence to "low".
 Tags: reuse a tag from EXISTING_TAGS when it fits; otherwise create at most 6 new tags.
 Tags are lowercase, hyphenated, ASCII, broad reusable topics (for example "cooking", "swift", "personal-finance"),
-never one-off phrases or names.
+never one-off phrases or names, and never starting with "raingist-".
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]),

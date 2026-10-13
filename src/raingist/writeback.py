@@ -2,9 +2,10 @@ import re
 
 MARKER = "**AI summary**"
 FOOTER_PREFIX = "_source:"
-FAIL_MARKER = "_ai-failed:"
+FAIL_MARKER = "_raingist-failed:"
 PLACEHOLDER_TITLES = {"tiktok - make your day", "tiktok", ""}
 MAX_NOTE = 9000
+RESERVED_PREFIX = "raingist-"   # state/control tags live here; generated tags never may
 
 def normalize_tag(t: str) -> str:
     t = re.sub(r"[\s_]+", "-", t.strip().lower())
@@ -16,7 +17,7 @@ def choose_tags(generated: list[str], library_tags: list[str], reserved: frozens
     out, new = [], 0
     for g in generated:
         n = normalize_tag(g)
-        if not n or n in reserved or n in out:
+        if not n or n in reserved or n.startswith(RESERVED_PREFIX) or n in out:
             continue
         if n in lib:
             out.append(lib[n])

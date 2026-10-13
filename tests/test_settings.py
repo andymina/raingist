@@ -37,8 +37,13 @@ def test_bad_int(env):
         load_settings(env)
 
 def test_duplicate_tags(env):
-    env["TAG_SKIP"] = "AI-Done"
+    env["TAG_SKIP"] = "Raingist-Done"
     with pytest.raises(SystemExit, match="distinct"):
+        load_settings(env)
+
+def test_tags_need_prefix(env):
+    env["TAG_DONE"] = "ai-done"
+    with pytest.raises(SystemExit, match="raingist-"):
         load_settings(env)
 
 def test_data_ready(env, tmp_path):

@@ -106,10 +106,12 @@ def load_settings(env: Mapping | None = None) -> Settings:
     if cookies and not cookies.is_file():
         fail(f"TIKTOK_COOKIES_FILE {cookies} does not exist")
     tags = {k: (env.get(k) or d).strip().lower() for k, d in (
-        ("TAG_DONE", "ai-done"), ("TAG_FAILED", "ai-failed"), ("TAG_SKIP", "ai-skip"),
-        ("TAG_OCR", "ai-ocr"), ("TAG_REDO", "ai-redo"))}
+        ("TAG_DONE", "raingist-done"), ("TAG_FAILED", "raingist-failed"), ("TAG_SKIP", "raingist-skip"),
+        ("TAG_OCR", "raingist-ocr"), ("TAG_REDO", "raingist-redo"))}
     if len(set(tags.values())) != len(tags):
         fail("TAG_* values must be distinct")
+    if not all(t.startswith("raingist-") for t in tags.values()):
+        fail("TAG_* values must start with 'raingist-' (the prefix generated tags are banned from)")
     backoff = _ints(env.get("RETRY_BACKOFF_MINUTES"), "RETRY_BACKOFF_MINUTES") or (2, 10, 30, 120, 360)
     return Settings(
         data_dir=Path(env["DATA_DIR"]).expanduser(),

@@ -51,7 +51,7 @@ def test_new_tiktok_done(settings, tmp_path, ok):
     assert run(settings, tmp_path, rd) == "done"
     (rid, fields), = rd.updates
     assert fields["note"].startswith("mine\n\n**AI summary**\nNew summary.")
-    assert fields["tags"] == ["Mine", "cooking", "ai-done"]
+    assert fields["tags"] == ["Mine", "cooking", "raingist-done"]
     assert fields["title"] == "A title"
 
 def test_non_tiktok_noop(settings, tmp_path, ok):
@@ -60,12 +60,12 @@ def test_non_tiktok_noop(settings, tmp_path, ok):
 
 def test_redo_replaces_block(settings, tmp_path, ok):
     old = "mine\n\n**AI summary**\nOld summary.\n- x\n_source: captions · m · 2026-01-01_"
-    rd = FakeRaindrop([item(note=old, tags=["ai-done", "ai-redo"])])
+    rd = FakeRaindrop([item(note=old, tags=["raingist-done", "raingist-redo"])])
     assert run(settings, tmp_path, rd) == "done"
     fields = rd.updates[0][1]
     assert fields["note"].count(writeback.MARKER) == 1
     assert "Old summary." not in fields["note"] and "New summary." in fields["note"]
-    assert "ai-redo" not in fields["tags"] and "ai-done" in fields["tags"]
+    assert "raingist-redo" not in fields["tags"] and "raingist-done" in fields["tags"]
 
 def test_transient_retry(settings, tmp_path, monkeypatch):
     def boom(*a, **k): raise TransientFailure("network")
@@ -79,8 +79,8 @@ def test_permanent_failed(settings, tmp_path, monkeypatch):
     rd = FakeRaindrop([item(note="mine")])
     assert run(settings, tmp_path, rd) == "failed"
     fields = rd.updates[0][1]
-    assert fields["note"].startswith("mine\n\n_ai-failed: Video is private")
-    assert fields["tags"] == ["ai-failed"]
+    assert fields["note"].startswith("mine\n\n_raingist-failed: Video is private")
+    assert fields["tags"] == ["raingist-failed"]
 
 def test_owner_note_forwarded(settings, tmp_path, ok):
     note = "keep this $start. list every tool $end."

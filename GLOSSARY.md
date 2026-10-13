@@ -26,14 +26,14 @@ The AI summary block appended to a Bookmark's Note, plus the tags added to it.
 _Avoid_: hydration, annotation
 
 **Processing state**:
-Where a Bookmark stands with the Service: pending, done (`ai-done`), failed (`ai-failed`), or opted out (`ai-skip`).
+Where a Bookmark stands with the Service: pending, done (`raingist-done`), failed (`raingist-failed`), or opted out (`raingist-skip`).
 
 **Owner note**:
 The part of a Bookmark's Note given to the summarizer: the whole Note, or only the spans marked with `$start.` and `$end.`. It steers or explains that Bookmark's Enrichment.
 _Avoid_: owner instructions, prompt, note prompt
 
 **Control tag**:
-A tag a person adds to steer processing: `ai-ocr` (read the on-screen text of a video) or `ai-redo` (replace the Enrichment).
+A tag a person adds to steer processing: `raingist-ocr` (read the on-screen text of a video) or `raingist-redo` (replace the Enrichment).
 _Avoid_: flag, command tag
 
 ## Content
@@ -64,10 +64,10 @@ One pass of the Service over all enabled Accounts, processing a bounded number o
 _Avoid_: run, tick, job
 
 **Transient failure**:
-A failure worth retrying later with backoff; becomes `ai-failed` once retries run out.
+A failure worth retrying later with backoff; becomes `raingist-failed` once retries run out.
 
 **Permanent failure**:
-A failure that cannot succeed on retry (private, deleted, login-only, geo-blocked); the Bookmark is marked `ai-failed` immediately.
+A failure that cannot succeed on retry (private, deleted, login-only, geo-blocked); the Bookmark is marked `raingist-failed` immediately.
 
 **Systemic alert**:
 The alert raised when several Bookmarks in a row fail within one Account's Cycle, signalling breakage rather than a bad Bookmark.

@@ -15,11 +15,11 @@ Terms are defined in [GLOSSARY.md](GLOSSARY.md). Design decisions are in [docs/a
 launchd (KeepAlive) → raingist serve
   every POLL_INTERVAL_SECONDS:
     for each enabled account (DATA_DIR/accounts/*.json, OAuth tokens auto-refreshed)
-      Raindrop API: bookmarks from the last 14 days without a state tag, plus any tagged ai-redo
+      Raindrop API: bookmarks from the last 14 days without a state tag, plus any tagged raingist-redo
       → extractor (TikTok: video via yt-dlp, slideshow via page JSON)
-          → captions, else transcriber (mlx-whisper); OCR (Apple Vision) for slideshows or ai-ocr
+          → captions, else transcriber (mlx-whisper); OCR (Apple Vision) for slideshows or raingist-ocr
       → LLM (Gemini, optional Anthropic fallback): summary, takeaways, tags, title
-      → write-back: append note block, merge tags, add ai-done (or ai-failed)
+      → write-back: append note block, merge tags, add raingist-done (or raingist-failed)
 ```
 
 Each pluggable part is a plain `name → implementation` dict selected in `.env` ([ADR 0004](docs/adr/0004-pluggable-registries.md)):
@@ -105,17 +105,17 @@ Service control:
 
 | Tag | Set by | Meaning |
 |---|---|---|
-| `ai-done` | service | Enriched |
-| `ai-failed` | service | Gave up; the reason is on a `_ai-failed: …_` line in the note |
-| `ai-skip` | you | Never process this bookmark |
-| `ai-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
-| `ai-redo` | you | Reprocess: the old AI block is replaced, then `ai-redo` is removed |
+| `raingist-done` | service | Enriched |
+| `raingist-failed` | service | Gave up; the reason is on a `_raingist-failed: …_` line in the note |
+| `raingist-skip` | you | Never process this bookmark |
+| `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
+| `raingist-redo` | you | Reprocess: the old AI block is replaced, then `raingist-redo` is removed |
 
 All names are configurable (`TAG_*`). The service only adds tags: it reuses your existing tags, adds at most 6 new `lowercase-hyphen` ones, and never removes yours. The title is replaced only if it is empty, equals the URL, or is `TikTok - Make Your Day`. The excerpt is never touched.
 
 ## TikTok: videos vs slideshows
 
-- **Videos:** captions via yt-dlp, else Whisper. Frame OCR runs only with `ai-ocr`.
+- **Videos:** captions via yt-dlp, else Whisper. Frame OCR runs only with `raingist-ocr`.
 - **Slideshows** (`/photo/` posts): the image URLs and caption come from the post page's embedded JSON. Every image (≤ 35) is OCR'd and nothing is transcribed. If OCR finds no text, the summary is built from the caption alone with `confidence: low`.
 
 - **Reused sounds:** when a video's sound isn't the creator's own (a song, or someone else's audio), the summarizer is told so. Any transcript is then treated as possibly lyrics or another person's voice, and the caption and on-screen text take priority. Detection compares the sound's author with the creator's name.
@@ -142,7 +142,7 @@ private thoughts $start. List every tool by name with one line on what it does. 
 
 - The note itself is never changed; the AI block is appended below it and is never sent back.
 - An owner note can override the default length (up to 15 takeaways). It can't change the tag rules, and it can't make the summary go beyond the source material.
-- To apply a changed note to an already-processed bookmark, add `ai-redo`.
+- To apply a changed note to an already-processed bookmark, add `raingist-redo`.
 - To try a note without touching Raindrop: `uv run raingist test --url <url> --note '…'`
 
 ## Alerts
@@ -154,7 +154,7 @@ Alerts go to `NOTIFY_URL` (ntfy), at most once every 6 h per alert key. Without 
 - an account's cycle failing (for example, a revoked grant)
 - an invalid account file
 - 3 failing bookmarks in a row within one account's cycle
-- each bookmark marked `ai-failed`
+- each bookmark marked `raingist-failed`
 
 ## Collection filters
 
@@ -204,7 +204,7 @@ uv lock --upgrade-package yt-dlp && uv sync && launchctl kickstart -k gui/$(id -
 | End to end, 62 s TikTok video with captions (download, captions, Gemini) | 3.4 s |
 | End to end, 11-image TikTok slideshow (2 page fetches, downloads, OCR, Gemini) | 8.1 s |
 | End to end, 8 s video with no captions (Whisper incl. model load, finds no speech, Gemini) | 9.5 s |
-| Same video with `ai-ocr` (Whisper + 4 frames OCR'd + Gemini) | 8.1 s |
+| Same video with `raingist-ocr` (Whisper + 4 frames OCR'd + Gemini) | 8.1 s |
 
 ## Costs
 
@@ -222,12 +222,12 @@ uv lock --upgrade-package yt-dlp && uv sync && launchctl kickstart -k gui/$(id -
 |---|---|---|
 | Alert "N bookmarks in a row failed … Unable to extract" | yt-dlp broke against TikTok | `uv lock --upgrade-package yt-dlp && uv sync`, then kickstart the agent |
 | "IP address is blocked" / 403 | IP flagged by TikTok | Wait a few hours |
-| Login-only TikTok → `ai-failed` "log in" | No TikTok session | Add `secrets/tiktok-cookies.txt` and set `TIKTOK_COOKIES_FILE` |
+| Login-only TikTok → `raingist-failed` "log in" | No TikTok session | Add `secrets/tiktok-cookies.txt` and set `TIKTOK_COOKIES_FILE` |
 | Slideshows → retry "no embedded data" | TikTok page layout changed, or a bot wall | Set cookies; update `parse_post` |
 | "no LLM provider available … 429" | Gemini free quota hit | Items retry on their own; or add `anthropic` to `LLM_PROVIDERS` with a key |
 | Alert `account:<id>` "… 401" | Grant revoked or refresh failed | Run `uv run raingist connect` again |
 | Alert `account-file:<id>` | Corrupt account file | Run `uv run raingist accounts`, then reconnect |
 | Alert "… not mounted" | T7 disconnected | Reconnect it; the next cycle resumes |
 | `connect` fails "address already in use" | Port 8765 is busy | Free the port, or change `RAINDROP_REDIRECT_URI` and the Raindrop app setting to match |
-| Nothing processed | Agent not running, Mac asleep or logged out, not a TikTok, > 14 days old, has a state tag, collection filter, account disabled | `launchctl print gui/$(id -u)/com.raingist.serve`; `uv run raingist status`; add `ai-redo` |
-| Want OCR on a video that's already done | Video OCR is opt-in | Add `ai-ocr` and `ai-redo` |
+| Nothing processed | Agent not running, Mac asleep or logged out, not a TikTok, > 14 days old, has a state tag, collection filter, account disabled | `launchctl print gui/$(id -u)/com.raingist.serve`; `uv run raingist status`; add `raingist-redo` |
+| Want OCR on a video that's already done | Video OCR is opt-in | Add `raingist-ocr` and `raingist-redo` |
