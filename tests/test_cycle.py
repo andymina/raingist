@@ -25,9 +25,10 @@ def test_disabled_skipped(settings, make_account, alerts, monkeypatch):
     assert pipeline.run_cycle(settings, alerts) == {}
 
 def test_account_cycle_systemic(settings, make_account, alerts, monkeypatch):
-    acct = make_account(settings, 1)
+    acct = make_account(settings, 1, exclude_collections=[99])
     items = [{"_id": i, "link": f"https://www.tiktok.com/@u/video/{i}", "tags": []} for i in (1, 2, 3)]
     items.append({"_id": 4, "link": "https://example.com/x", "tags": []})
+    items.append({"_id": 5, "link": "https://www.tiktok.com/@u/video/5", "tags": [], "collection": {"$id": 99}})
 
     class FakeRD:
         def __init__(self, token): assert token == "t"

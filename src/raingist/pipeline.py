@@ -90,7 +90,7 @@ def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool 
     state_dir.mkdir(parents=True, exist_ok=True)
     attempts = Attempts(state_dir / "attempts.json", s.retry_backoff)
     pending = [i for i in rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
-               if detect(s, i.get("link", "")) and attempts.due(i["_id"])]
+               if detect(s, i.get("link", "")) and in_scope(acct, i) and attempts.due(i["_id"])]
     pending = pending[: limit or s.max_items_per_account]
     existing_tags = rd.tags() if pending else []
     counts: dict[str, int] = {}
@@ -112,8 +112,9 @@ def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool 
         counts[r] = counts.get(r, 0) + 1
         log.info("[%s] item %s -> %s", acct.id, rid, r)
     log.info("[%s] cycle complete: %s", acct.id, counts)
-    status = {"last_cycle_at": dt.datetime.now(dt.UTC).isoformat(), "counts": counts, "last_error": last_error}
-    (state_dir / "status.json").write_text(json.dumps(status, indent=1))
+    if not dry_run:
+        status = {"last_cycle_at": dt.datetime.now(dt.UTC).isoformat(), "counts": counts, "last_error": last_error}
+        (state_dir / "status.json").write_text(json.dumps(status, indent=1))
     return counts
 
 def run_cycle(s: Settings, alerts: Alerts, only: int | None = None, dry_run: bool = False, limit: int | None = None) -> dict:

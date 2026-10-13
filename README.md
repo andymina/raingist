@@ -158,7 +158,9 @@ Alerts go to `NOTIFY_URL` (ntfy), at most once every 6 h per alert key. Without 
 
 ## Collection filters
 
-Edit `include_collections` / `exclude_collections` (lists of Raindrop collection ids) in `DATA_DIR/accounts/<id>.json`. An empty list means all collections. Reconnecting keeps the filters.
+Edit `include_collections` / `exclude_collections` (lists of Raindrop collection ids) in `DATA_DIR/accounts/<id>.json`. An empty list means all collections. Filters match a bookmark's own collection exactly, so sub-collections must be listed separately. Unsorted is collection `-1`. Reconnecting keeps the filters.
+
+The owner account currently processes only the `raingist` collection (`include_collections: [76070344]`).
 
 ## Hosting later
 

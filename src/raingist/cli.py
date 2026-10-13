@@ -5,7 +5,7 @@ from .accounts import AccountError, store, connect, access_token
 from .raindrop import Raindrop, authorize_url
 from .oauth_callback import wait_for_code
 from .state import Attempts, RunLock, Busy
-from .pipeline import run_cycle, process_item, extract
+from .pipeline import run_cycle, process_item, extract, in_scope
 from .extract import detect
 from .llm import summarize
 from .notify import Alerts
@@ -118,8 +118,10 @@ def cmd_status(s, args):
         rd = Raindrop(access_token(s, acct))
         status = s.state_dir / str(aid) / "status.json"
         attempts = Attempts(s.state_dir / str(aid) / "attempts.json", s.retry_backoff)
-        print(f"== {aid} {acct.name} enabled={acct.enabled} "
-              f"pending={len(rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo))}")
+        pending = [i for i in rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
+                   if detect(s, i.get("link", "")) and in_scope(acct, i)]
+        print(f"== {aid} {acct.name} enabled={acct.enabled} include={acct.include_collections} "
+              f"exclude={acct.exclude_collections} pending={len(pending)}")
         print("   last cycle:", status.read_text().strip() if status.exists() else "never")
         print("   retrying:", json.dumps(attempts.data))
 
