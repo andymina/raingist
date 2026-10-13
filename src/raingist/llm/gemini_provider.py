@@ -4,8 +4,9 @@ from .prompt import Summary, ProviderUnavailable
 from ..extract.common import TransientFailure
 
 def generate(api_key: str, model: str, system: str, user: str) -> Summary:
+    client = genai.Client(api_key=api_key)   # keep a reference: a GC'd Client closes its HTTP connection mid-call
     try:
-        resp = genai.Client(api_key=api_key).models.generate_content(
+        resp = client.models.generate_content(
             model=model, contents=user,
             config=types.GenerateContentConfig(
                 system_instruction=system, response_mime_type="application/json",

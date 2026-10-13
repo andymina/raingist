@@ -25,6 +25,17 @@ def test_parse_post_unavailable():
     with pytest.raises(PermanentFailure):
         tiktok.parse_post(_page({"statusCode": 10204, "statusMsg": "item doesn't exist"}))
 
+def test_parse_post_no_post_data():
+    data = {"__DEFAULT_SCOPE__": {"webapp.app-context": {}}}
+    page = f'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">{json.dumps(data)}</script>'
+    with pytest.raises(TransientFailure):
+        tiktok.parse_post(page)
+    with pytest.raises(TransientFailure):
+        tiktok.parse_post(_page({"statusCode": 0}))
+
+def test_data_url():
+    assert tiktok.data_url("https://www.tiktok.com/@u/photo/7?_r=1&_t=x") == "https://www.tiktok.com/@u/video/7"
+
 def test_parse_post_no_script():
     with pytest.raises(TransientFailure):
         tiktok.parse_post("<html><body>bot wall</body></html>")
@@ -34,8 +45,13 @@ def test_parse_post_no_script():
     ("https://www.tiktok.com/@u/video/1", "video"),
 ])
 def test_extract_routes(settings, monkeypatch, tmp_path, final_url, expected):
-    monkeypatch.setattr(tiktok, "fetch_page", lambda client, url: (final_url, "<html></html>"))
+    fetched = []
+    def fetch(client, url):
+        fetched.append(url); return final_url, "<html></html>"
+    monkeypatch.setattr(tiktok, "fetch_page", fetch)
     monkeypatch.setattr(tiktok, "extract_slideshow", lambda s, client, html, workdir: Extraction(format="slideshow"))
     monkeypatch.setattr(tiktok, "extract_video", lambda s, url, workdir, want_ocr: Extraction(format="video"))
     ex = tiktok.extract(settings, {"link": "https://vm.tiktok.com/ZM/"}, tmp_path / "w", False)
     assert ex.format == expected
+    if expected == "slideshow":
+        assert fetched == ["https://vm.tiktok.com/ZM/", "https://www.tiktok.com/@u/video/1"]

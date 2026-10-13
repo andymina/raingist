@@ -22,6 +22,10 @@ def matches(url: str) -> bool:
 def is_slideshow(url: str) -> bool:
     return "/photo/" in urlparse(url).path
 
+def data_url(url: str) -> str:
+    """The /video/ URL of a /photo/ post, without tracking query params."""
+    return url.split("?")[0].replace("/photo/", "/video/")
+
 def _client(cookiefile: Path | None) -> httpx.Client:
     cookies = None
     if cookiefile:
@@ -46,10 +50,14 @@ def parse_post(html: str) -> dict:
     m = DATA_SCRIPT.search(html)
     if not m:
         raise TransientFailure("tiktok page has no embedded data (layout change or bot wall)")
-    detail = json.loads(m.group(1)).get("__DEFAULT_SCOPE__", {}).get("webapp.video-detail", {})
-    item = detail.get("itemInfo", {}).get("itemStruct")
-    if detail.get("statusCode", 0) != 0 or not item:
+    detail = json.loads(m.group(1)).get("__DEFAULT_SCOPE__", {}).get("webapp.video-detail")
+    if detail is None:
+        raise TransientFailure("tiktok page has no post data (layout change or bot wall)")
+    if detail.get("statusCode", 0) != 0:
         raise PermanentFailure(f"tiktok post unavailable: {detail.get('statusMsg') or detail.get('statusCode')}")
+    item = detail.get("itemInfo", {}).get("itemStruct")
+    if not item:
+        raise TransientFailure("tiktok page has no itemStruct")
     return item
 
 def image_urls(item: dict) -> list[str]:
@@ -64,6 +72,8 @@ def extract(s, item: dict, workdir: Path, want_ocr: bool) -> Extraction:
     with _client(s.tiktok_cookies_file) as client:
         url, html = fetch_page(client, item["link"])
         if is_slideshow(url):
+            # /photo/ pages render client-side; the same post's /video/ page embeds its data
+            _, html = fetch_page(client, data_url(url))
             return extract_slideshow(s, client, html, workdir)
     return extract_video(s, url, workdir, want_ocr)
 
