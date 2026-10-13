@@ -5,7 +5,7 @@ RESERVED = frozenset({"raingist-done", "raingist-failed", "raingist-skip", "rain
 STATE = frozenset({"raingist-done", "raingist-failed", "raingist-skip"})
 
 def block(text="Sum."):
-    return wb.build_block(Summary(summary=text, key_takeaways=["a"], language="en"), "captions", "m", "2026-10-13", "en")
+    return wb.build_block(Summary(summary=text, key_takeaways=["a"], language="en"))
 
 def test_merge_note_append_and_idempotent():
     note = wb.merge_note("mine", block())
@@ -18,7 +18,7 @@ def test_merge_note_empty_and_strips_failure():
     assert "_raingist-failed:" not in note and note.startswith("mine")
 
 def test_merge_note_truncates():
-    note = wb.merge_note("x" * 9500, block())
+    note = wb.merge_note("x" * 10500, block())
     assert len(note) == wb.MAX_NOTE and note.endswith("…")
 
 def test_strip_ai_block():
@@ -39,10 +39,14 @@ def test_choose_tags():
     assert wb.choose_tags(["Swift_UI"], ["SwiftUI", "swift-ui"], RESERVED) == ["swift-ui"]
     assert wb.choose_tags(["raingist-tools", "Raingist Notes", "raingist"], ["raingist-tools"], RESERVED) == ["raingist"]
 
-def test_build_block_lang():
-    assert "lang:" not in block()
-    b = wb.build_block(Summary(summary="S", language="es"), "whisper", "m", "2026-10-13", "en")
-    assert b.splitlines()[-1] == "_source: whisper · m · 2026-10-13 · lang: es_"
+def test_build_block():
+    b = wb.build_block(Summary(summary="Four plugins:\n setup, skills.", key_takeaways=["Setup: scans\nrepos", " "]))
+    assert b == "**AI summary**\nFour plugins: setup, skills.\n- Setup: scans repos"
+    assert "_source" not in b
+
+def test_strip_ai_block_legacy_footer():
+    old = "mine\n\n**AI summary**\nOld.\n- x\n_source: captions · m · 2026-01-01_\nafter"
+    assert wb.strip_ai_block(old) == "mine\n\nafter"
 
 def test_is_placeholder_title():
     assert wb.is_placeholder_title("", "https://t/x")

@@ -1,10 +1,10 @@
 import re
 
 MARKER = "**AI summary**"
-FOOTER_PREFIX = "_source:"
+LEGACY_FOOTER = "_source:"   # last line of blocks written before 2026-10-14
 FAIL_MARKER = "_raingist-failed:"
 PLACEHOLDER_TITLES = {"tiktok - make your day", "tiktok", ""}
-MAX_NOTE = 9000
+MAX_NOTE = 10000   # Raindrop's hard limit; the API rejects longer notes
 RESERVED_PREFIX = "raingist-"   # state/control tags live here; generated tags never may
 
 def normalize_tag(t: str) -> str:
@@ -56,23 +56,28 @@ def strip_failure_line(note: str) -> str:
     return "\n".join(l for l in note.splitlines() if not l.startswith(FAIL_MARKER)).rstrip()
 
 def strip_ai_block(note: str) -> str:
-    """Remove the lines from the MARKER line through the first footer line after it."""
-    out, inside = [], False
+    """Remove our block: the MARKER line, the summary line after it, the "- " takeaway lines that follow,
+    and a legacy _source: footer. Anything after the last bullet is the person's again."""
+    out, state = [], "outside"
     for line in (note or "").splitlines():
         if line.strip() == MARKER:
-            inside = True; continue
-        if inside:
-            inside = not line.startswith(FOOTER_PREFIX); continue
+            state = "summary"; continue
+        if state == "summary":
+            state = "bullets"; continue
+        if state == "bullets" and line.startswith("- "):
+            continue
+        if state == "bullets" and line.startswith(LEGACY_FOOTER):
+            state = "outside"; continue
+        state = "outside"
         out.append(line)
     return "\n".join(out).rstrip()
 
-def build_block(summary, source: str, model: str, date: str, home_language: str) -> str:
-    lines = [MARKER, summary.summary.strip(), *[f"- {t.strip()}" for t in summary.key_takeaways]]
-    footer = f"{FOOTER_PREFIX} {source} · {model} · {date}"
-    if summary.language and summary.language != home_language:
-        footer += f" · lang: {summary.language}"
-    lines.append(footer + "_")
-    return "\n".join(lines)
+def _one_line(text: str) -> str:
+    return " ".join(text.split())   # strip_ai_block relies on one line per summary/takeaway
+
+def build_block(summary) -> str:
+    return "\n".join([MARKER, _one_line(summary.summary),
+                      *[f"- {_one_line(t)}" for t in summary.key_takeaways if t.strip()]])
 
 def merge_note(existing: str, block: str) -> str:
     existing = strip_failure_line(existing or "")

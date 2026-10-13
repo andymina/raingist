@@ -105,6 +105,23 @@ Uninstall the service: `launchctl bootout gui/$(id -u)/com.raingist.serve`
 
 The service checks Raindrop every `POLL_INTERVAL_SECONDS` (default 60). It processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account per cycle, and only bookmarks created in the last `POLL_LOOKBACK_DAYS` (14). An idle cycle costs 2 Raindrop API requests, against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
 
+## The AI block
+
+Appended below your own note:
+
+```
+**AI summary**
+Four free Claude Code plugins: setup, planning, frontend design, security.
+- Claude Code Setup: official Anthropic plugin that scans a project for missing add-ons and automations
+- Security Guidance: checks code changes against ~25 dangerous patterns
+```
+
+- **Summary:** one or two terse sentences that open with the subject itself.
+- **Takeaways:** one line per distinct point, written `Name: what it is or does` for lists.
+- **Searchable wording:** exact names, tools, people, brands and buzzwords from the source are kept, so free-text search finds the bookmark later.
+- **Length:** decided by the content, not a fixed count. The only cap is Raindrop's 10,000-character limit per note.
+- The source and model used are logged, not written into the note.
+
 ## Tags
 
 | Tag | Set by | Meaning |
@@ -144,7 +161,7 @@ private thoughts $start. List every tool by name with one line on what it does. 
 | `$start. $end.` | Nothing |
 
 - The note itself is never changed; the AI block is appended below it and is never sent back.
-- An owner note can override the default length (up to 15 takeaways). It can't change the tag rules, and it can't make the summary go beyond the source material.
+- An owner note can't change the tag rules, and it can't make the summary go beyond the source material.
 - To apply a changed note to an already-processed bookmark, add `raingist-redo`.
 - To try a note without touching Raindrop: `uv run raingist test --url <url> --note '…'`
 

@@ -23,7 +23,7 @@ Python is pyenv 3.13 with uv set to system interpreters only (ADR 0005). Run eve
 
 ## Invariants
 
-- **The note is append-only.** The owner's text stays byte-for-byte; the service only appends or replaces its own block (`**AI summary**` … `_source: …_`) and its `_raingist-failed: …_` line.
+- **The note is append-only.** The owner's text stays byte-for-byte; the service only appends or replaces its own block (the `**AI summary**` line, one summary line, then `- ` takeaway lines; `strip_ai_block` finds the end by that shape, so keep summary and takeaways one line each) and its `_raingist-failed: …_` line.
 - **The `raingist-` tag prefix is reserved** for state and control tags, which are configurable but must keep the prefix. `choose_tags` drops any generated tag in that namespace.
 - **Failure classification decides retry.** Raise `TransientFailure` for anything that might work later (layout changes, timeouts, quota) and `PermanentFailure` only when the post itself is gone or private. A wrong permanent failure tags the bookmark `raingist-failed` for good.
 - **Fail loud on config.** Validate in `settings.load_settings` and exit with a clear message; registries are plain dicts checked there (ADR 0004).
@@ -35,5 +35,4 @@ Python is pyenv 3.13 with uv set to system interpreters only (ADR 0005). Run eve
 - **Raindrop's token URL redirects.** `raindrop.io/oauth/access_token` answers 307; call `api.raindrop.io/v1/oauth/access_token` directly. Raindrop also reports OAuth errors as HTTP 200 with `result: false`.
 - **Apple Vision can hang forever.** OCR runs in a child process (`ocr/worker.py`) with a timeout; keep backends out of the main process.
 - **Keep a reference to SDK clients for the whole call.** A garbage-collected `genai.Client` closes its HTTP connection mid-request.
-- **Gemini overshoots length rules.** Takeaway caps are enforced in `llm.summarize`, not only in the prompt.
 - **Extraction is cached by URL** (`DATA_DIR/transcripts`, separate key with OCR), so a redo reuses the transcript. Delete the cache entry to force a fresh download.
