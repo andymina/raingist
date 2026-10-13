@@ -174,7 +174,9 @@ uv lock --upgrade-package yt-dlp && uv sync && launchctl kickstart -k gui/$(id -
 | Whisper large-v3-turbo, 5 s clip, model already on disk | ~7 s (includes model load) |
 | Apple Vision OCR, per image | 0.07–0.4 s |
 | First OCR call after install | ~1 min, one-time warm-up |
-| End to end, real TikTok video and slideshow | _to be measured (Step 8)_ |
+| End to end, 62 s TikTok video with captions (download, captions, Gemini) | 3.4 s |
+| End to end, 11-image TikTok slideshow (2 page fetches, downloads, OCR, Gemini) | 8.1 s |
+| End to end, video that needs Whisper | _not measured yet_ |
 
 ## Costs
 
