@@ -1,6 +1,6 @@
 # raingist
 
-A self-hosted service that enriches Raindrop.io bookmarks. When a connected Raindrop account saves a TikTok, the service adds two things within about 5 minutes, with no manual step:
+A self-hosted service that enriches Raindrop.io bookmarks. When a connected Raindrop account saves a TikTok, the service adds two things within a minute or two, with no manual step:
 
 - an AI summary appended to the bookmark's **Note**
 - topic **Tags**
@@ -16,8 +16,9 @@ launchd (KeepAlive) → raingist serve
   every POLL_INTERVAL_SECONDS:
     for each enabled account (DATA_DIR/accounts/*.json, OAuth tokens auto-refreshed)
       Raindrop API: bookmarks from the last 14 days without a state tag, plus any tagged raingist-redo
-      → extractor (TikTok: video via yt-dlp, slideshow via page JSON)
-          → captions, else transcriber (mlx-whisper); OCR (Apple Vision) for slideshows or raingist-ocr
+      → extractor (TikTok: video via yt-dlp, slideshow via the post page's JSON)
+          → captions, else transcriber (mlx-whisper)
+          → OCR (Apple Vision, in a child process with a timeout) for slideshows, or videos tagged raingist-ocr
       → LLM (Gemini, optional Anthropic fallback): summary, takeaways, tags, title
       → write-back: append note block, merge tags, add raingist-done (or raingist-failed)
 ```
@@ -39,7 +40,8 @@ All data lives on the T7 drive under `DATA_DIR` (`/Volumes/T7/raingist`):
 | `accounts/` | Account files |
 | `models/` | Whisper model |
 | `transcripts/` | Extraction cache |
-| `state/<account-id>/` | Retries, status, run lock |
+| `state/<account-id>/` | Retries and last-cycle status per account |
+| `state/serve.json`, `state/run.lock` | Service heartbeat (pid, next poll) and the lock that stops cycles overlapping |
 | `work/` | Temporary downloads |
 | `logs/raingist.log` | Rotating log, 10 MB × 3 |
 
@@ -77,9 +79,9 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
    ```bash
    ./launchd/install.sh
    ```
-   Check it's running:
+   Check it's running and when it polls next:
    ```bash
-   launchctl print gui/$(id -u)/com.raingist.serve | grep state
+   uv run raingist status
    ```
 
 ## Commands
@@ -91,15 +93,17 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
 | `serve` | Long-running loop (what launchd runs) |
 | `once [--account ID] [--dry-run] [--limit N]` | One cycle now. `--dry-run` logs the would-be `PUT`s |
 | `process --account ID --id RAINDROP_ID [--dry-run]` | One bookmark |
-| `test --url URL [--ocr]` | Extract and summarize one URL without touching Raindrop |
+| `test --url URL [--ocr] [--note TEXT]` | Extract and summarize one URL without touching Raindrop; `--note` tries an owner note |
 | `connect` | OAuth-connect (or reconnect) a Raindrop account |
 | `accounts [list\|enable\|disable\|disconnect] [ID]` | Manage connected accounts |
-| `status` | Per-account pending count, last cycle, items being retried |
+| `status` | Whether the service is running and when it polls next; per account: filters, pending count, last cycle, items being retried |
+| `restart` | Restart the background service, e.g. after code or `.env` changes |
 
-Service control:
+Uninstall the service: `launchctl bootout gui/$(id -u)/com.raingist.serve`
 
-- Restart after code changes: `launchctl kickstart -k gui/$(id -u)/com.raingist.serve`
-- Uninstall: `launchctl bootout gui/$(id -u)/com.raingist.serve`
+## Polling
+
+The service checks Raindrop every `POLL_INTERVAL_SECONDS` (default 60). It processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account per cycle, and only bookmarks created in the last `POLL_LOOKBACK_DAYS` (14). An idle cycle costs 2 Raindrop API requests, against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
 
 ## Tags
 
@@ -116,8 +120,7 @@ All names are configurable (`TAG_*`). The service only adds tags: it reuses your
 ## TikTok: videos vs slideshows
 
 - **Videos:** captions via yt-dlp, else Whisper. Frame OCR runs only with `raingist-ocr`.
-- **Slideshows** (`/photo/` posts): the image URLs and caption come from the post page's embedded JSON. Every image (≤ 35) is OCR'd and nothing is transcribed. If OCR finds no text, the summary is built from the caption alone with `confidence: low`.
-
+- **Slideshows** (`/photo/` posts): the image URLs and caption come from the JSON embedded in the post's `/video/` page; the `/photo/` page itself renders in the browser and carries no data. Every image (≤ 35) is OCR'd and nothing is transcribed. If OCR finds no text, the summary is built from the caption alone with `confidence: low`.
 - **Reused sounds:** when a video's sound isn't the creator's own (a song, or someone else's audio), the summarizer is told so. Any transcript is then treated as possibly lyrics or another person's voice, and the caption and on-screen text take priority. Detection compares the sound's author with the creator's name.
 
 Bookmarks from other sites are left untouched and untagged, so a future extractor can pick them up.
@@ -191,7 +194,7 @@ uv venv --python "$(pyenv which python)" && uv sync
 To upgrade yt-dlp when TikTok breaks it:
 
 ```bash
-uv lock --upgrade-package yt-dlp && uv sync && launchctl kickstart -k gui/$(id -u)/com.raingist.serve
+uv lock --upgrade-package yt-dlp && uv sync && uv run raingist restart
 ```
 
 ## Timings (M1 16 GB)
@@ -220,14 +223,16 @@ uv lock --upgrade-package yt-dlp && uv sync && launchctl kickstart -k gui/$(id -
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Alert "N bookmarks in a row failed … Unable to extract" | yt-dlp broke against TikTok | `uv lock --upgrade-package yt-dlp && uv sync`, then kickstart the agent |
+| Alert "N bookmarks in a row failed … Unable to extract" | yt-dlp broke against TikTok | `uv lock --upgrade-package yt-dlp && uv sync && uv run raingist restart` |
 | "IP address is blocked" / 403 | IP flagged by TikTok | Wait a few hours |
 | Login-only TikTok → `raingist-failed` "log in" | No TikTok session | Add `secrets/tiktok-cookies.txt` and set `TIKTOK_COOKIES_FILE` |
-| Slideshows → retry "no embedded data" | TikTok page layout changed, or a bot wall | Set cookies; update `parse_post` |
+| Slideshows → retry "no embedded data" / "no post data" | TikTok page layout changed, or a bot wall | Set cookies; update `parse_post` and `data_url` in `extract/tiktok.py` |
+| Retry "OCR timed out" | Apple Vision hung (it happens intermittently); the OCR process was killed | Nothing: the bookmark retries with backoff |
 | "no LLM provider available … 429" | Gemini free quota hit | Items retry on their own; or add `anthropic` to `LLM_PROVIDERS` with a key |
 | Alert `account:<id>` "… 401" | Grant revoked or refresh failed | Run `uv run raingist connect` again |
 | Alert `account-file:<id>` | Corrupt account file | Run `uv run raingist accounts`, then reconnect |
 | Alert "… not mounted" | T7 disconnected | Reconnect it; the next cycle resumes |
 | `connect` fails "address already in use" | Port 8765 is busy | Free the port, or change `RAINDROP_REDIRECT_URI` and the Raindrop app setting to match |
-| Nothing processed | Agent not running, Mac asleep or logged out, not a TikTok, > 14 days old, has a state tag, collection filter, account disabled | `launchctl print gui/$(id -u)/com.raingist.serve`; `uv run raingist status`; add `raingist-redo` |
+| Nothing processed | Service not running, Mac asleep or logged out, not a TikTok, > 14 days old, has a state tag, outside the collection filter, account disabled | `uv run raingist status` (shows service state and filters); `uv run raingist restart`; add `raingist-redo` |
+| `status` says the service is NOT RUNNING | It crashed during startup, e.g. a config error in `.env` | `launchctl print gui/$(id -u)/com.raingist.serve` shows the last exit code; run `uv run raingist once` to see the error |
 | Want OCR on a video that's already done | Video OCR is opt-in | Add `raingist-ocr` and `raingist-redo` |
