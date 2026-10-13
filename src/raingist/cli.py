@@ -41,6 +41,8 @@ def load_account_or_exit(s, aid):
 
 def cmd_serve(s, args):
     alerts = Alerts(s.notify_url)
+    if data_ready(s):
+        attach_file_log(s)   # so the startup line reaches the T7 log too
     log.info("serving every %ss (extractors: %s)", s.poll_interval, ",".join(s.enabled_extractors))
     while True:
         start = time.monotonic()
