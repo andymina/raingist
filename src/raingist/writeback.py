@@ -4,6 +4,7 @@ MARKER = "**AI summary**"
 LEGACY_FOOTER = "_source:"   # last line of blocks written before 2026-10-14
 FAIL_MARKER = "_raingist-failed:"
 PLACEHOLDER_TITLES = {"tiktok - make your day", "tiktok", ""}
+PLACEHOLDER_PREFIXES = ("tiktok · ",)   # Raindrop's default "TikTok · <creator name>"
 MAX_NOTE = 10000   # Raindrop's hard limit; the API rejects longer notes
 RESERVED_PREFIX = "raingist-"   # state/control tags live here; generated tags never may
 
@@ -93,4 +94,4 @@ def merge_failure(existing: str, reason: str, date: str) -> str:
 
 def is_placeholder_title(title: str | None, link: str) -> bool:
     t = (title or "").strip().lower()
-    return t in PLACEHOLDER_TITLES or t == link.strip().lower()
+    return t in PLACEHOLDER_TITLES or t.startswith(PLACEHOLDER_PREFIXES) or t == link.strip().lower()

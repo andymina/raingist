@@ -132,7 +132,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
 | `raingist-redo` | you | Reprocess: the old AI block is replaced, then `raingist-redo` is removed |
 
-All names are configurable (`TAG_*`). The service only adds tags: it reuses your existing tags, adds at most 6 new `lowercase-hyphen` ones, and never removes yours. The title is replaced only if it is empty, equals the URL, or is `TikTok - Make Your Day`. The excerpt is never touched.
+All names are configurable (`TAG_*`). The service only adds tags: it reuses your existing tags, adds at most 6 new `lowercase-hyphen` ones, and never removes yours. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
 
 ## TikTok: videos vs slideshows
 

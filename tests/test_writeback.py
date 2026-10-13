@@ -52,7 +52,9 @@ def test_is_placeholder_title():
     assert wb.is_placeholder_title("", "https://t/x")
     assert wb.is_placeholder_title("TikTok - Make Your Day", "https://t/x")
     assert wb.is_placeholder_title("https://t/x", "https://t/x")
+    assert wb.is_placeholder_title("TikTok · Tyler Mommsen", "https://t/x")
     assert not wb.is_placeholder_title("Real title", "https://t/x")
+    assert not wb.is_placeholder_title("TikTok tips · my list", "https://t/x")
 
 def test_owner_note():
     assert wb.owner_note("") == ""
