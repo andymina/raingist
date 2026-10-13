@@ -6,7 +6,7 @@ from .common import classify_ytdlp_error
 
 def base_opts(workdir: Path, cookiefile: Path | None = None) -> dict:
     opts = {
-        "quiet": True, "no_warnings": True, "noplaylist": True,
+        "quiet": True, "no_warnings": True, "noprogress": True, "noplaylist": True,
         "socket_timeout": 30, "retries": 2,
         "outtmpl": str(workdir / "%(id)s.%(ext)s"),
         "writesubtitles": True, "writeautomaticsub": True,

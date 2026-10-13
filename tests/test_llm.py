@@ -29,3 +29,10 @@ def test_all_unavailable(settings, monkeypatch):
     monkeypatch.setattr(llm, "PROVIDERS", {"a": down, "b": down})
     with pytest.raises(TransientFailure, match="no LLM provider"):
         llm.summarize(two(settings), ITEM, "tiktok", Extraction(), [])
+
+def test_takeaways_capped_by_length(settings, monkeypatch):
+    many = Summary(summary="ok", key_takeaways=[str(i) for i in range(8)])
+    monkeypatch.setattr(llm, "PROVIDERS", {"a": lambda *_: many.model_copy(deep=True), "b": None})
+    s = two(settings)
+    assert len(llm.summarize(s, ITEM, "tiktok", Extraction(duration=60), [])[0].key_takeaways) == 4
+    assert len(llm.summarize(s, ITEM, "tiktok", Extraction(duration=900), [])[0].key_takeaways) == 5
