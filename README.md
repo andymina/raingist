@@ -121,10 +121,10 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - Security Guidance: checks code changes against ~25 dangerous patterns
 ```
 
-- **Summary:** one or two terse sentences that open with the subject itself. The creator who posted it is left out unless the post is about them.
+- **Summary:** one or two terse sentences that open with the subject itself. The person who posted it is left out (their handle is never sent to Gemini).
 - **Takeaways:** one line per distinct point, written `Name: what it is or does` for lists.
 - **Searchable wording:** exact names, tools, people, brands and buzzwords from the source are kept, so free-text search finds the bookmark later.
-- **Recipes:** the takeaways are the full recipe in order: ingredients with measurements, then steps with cooking and marinating times, temperatures and quantities, taken from the caption too.
+- **Recipes:** the takeaways are the full recipe in order: an `Ingredients:` line with every amount, then one line per step with its times, temperatures and heat settings. Every quantity mentioned anywhere (caption, speech, on-screen text) is kept.
 - **Length:** decided by the content, not a fixed count. The only cap is Raindrop's 10,000-character limit per note.
 - The source and model used are logged, not written into the note.
 

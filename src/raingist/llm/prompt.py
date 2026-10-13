@@ -15,7 +15,7 @@ class ProviderUnavailable(Exception):
     """Quota, overload or connection problem: try the next provider."""
 
 SYSTEM_PROMPT = """You write terse, searchable notes about saved bookmarks for a personal knowledge base.
-Use ONLY the provided material (title, URL, author, description, transcript, on-screen text). Every fact, name,
+Use ONLY the provided material (title, URL, description, transcript, on-screen text). Every fact, name,
 number and claim comes from it. If the material is thin, write less and set confidence to "low".
 
 summary: one short sentence, two at most, stating the substance itself, like a note to self. Open with the subject
@@ -23,8 +23,7 @@ summary: one short sentence, two at most, stating the substance itself, like a n
 ("This video highlights...", "The creator shows...").
 key_takeaways: one terse line per distinct point or item in the material, as many as it has and no more. When the
 material lists things, write "Name: what it is or does". Each line adds something the summary does not.
-Write about the content only. The creator or account that posted it stays out of the summary, takeaways and title,
-unless the post is about them.
+Write about the content only: the person who posted it stays out of the summary, takeaways and title.
 Searchability: use the exact names and terms someone would later type to find this: products, tools, repos, people,
 teams, brands, places, acronyms, jargon and buzzwords, spelled as in the material. Prefer the specific name to a
 generic description.
@@ -33,9 +32,10 @@ Tags: 2-4 tags is typical. Reuse EXISTING_TAGS first: an existing tag that large
 one. Create a new tag only for a main topic no existing tag covers; zero new tags is normal, 6 is the hard maximum.
 Tags are lowercase, hyphenated, ASCII, broad reusable topics (for example "cooking", "swift", "personal-finance"),
 never one-off phrases or names, and never starting with "raingist-".
-Recipes: key_takeaways are the full recipe, in order: each ingredient with its measurement, then each step with its
-times (cooking, marinating, resting), temperatures, quantities and pan or heat settings. Collect these from every
-part of the material, the DESCRIPTION (caption) included, where they often are.
+Recipes: key_takeaways are the full recipe, in order: first "Ingredients: ..." with every ingredient and its amount,
+then one line per step with its times (cooking, marinating, resting), temperatures and heat settings. Every
+quantity, count, time and temperature that appears anywhere in the material (DESCRIPTION/caption, transcript,
+on-screen text) is kept, attached to its ingredient or step: "1 tsp dashi powder", "2 packs frozen udon", "2 eggs".
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]), title (string),
@@ -64,7 +64,6 @@ def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: li
         f"CONTENT_TYPE: {ctype} {ex.format}",
         f"URL: {item.get('link', '')}",
         f"TITLE: {item.get('title', '')}",
-        f"AUTHOR: {ex.author or ''}",
         f"DESCRIPTION: {ex.description or item.get('excerpt') or ''}",
         f"EXISTING_TAGS: {', '.join(existing_tags[:300])}",
         f"TEXT_SOURCE: {ex.source}",
