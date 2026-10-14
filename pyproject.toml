@@ -1,7 +1,7 @@
 [project]
 name = "raingist"
 version = "0.1.0"
-description = "Add your description here"
+description = "Turns TikToks saved to a Raindrop.io \"raingist\" collection into terse, searchable notes (summary, tags, title), then files each one into a matching collection. Self-hosted on an M1 Mac: local Whisper (MLX) and Apple Vision OCR, Gemini for the summary."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
