@@ -24,10 +24,8 @@ class Settings:
     whisper_model: str
     ocr_backend: str
     poll_interval: int
-    lookback_days: int
     max_items_per_account: int
     retry_backoff: tuple[int, ...]   # seconds
-    tag_done: str
     tag_failed: str
     tag_skip: str
     tag_ocr: str
@@ -36,7 +34,7 @@ class Settings:
 
     @property
     def state_tags(self) -> frozenset[str]:
-        return frozenset({self.tag_done, self.tag_failed, self.tag_skip})
+        return frozenset({self.tag_failed, self.tag_skip})
 
     @property
     def reserved_tags(self) -> frozenset[str]:
@@ -106,7 +104,7 @@ def load_settings(env: Mapping | None = None) -> Settings:
     if cookies and not cookies.is_file():
         fail(f"TIKTOK_COOKIES_FILE {cookies} does not exist")
     tags = {k: (env.get(k) or d).strip().lower() for k, d in (
-        ("TAG_DONE", "raingist-done"), ("TAG_FAILED", "raingist-failed"), ("TAG_SKIP", "raingist-skip"),
+        ("TAG_FAILED", "raingist-failed"), ("TAG_SKIP", "raingist-skip"),
         ("TAG_OCR", "raingist-ocr"), ("TAG_REDO", "raingist-redo"))}
     if len(set(tags.values())) != len(tags):
         fail("TAG_* values must be distinct")
@@ -127,10 +125,9 @@ def load_settings(env: Mapping | None = None) -> Settings:
         whisper_model=env.get("WHISPER_MODEL") or "mlx-community/whisper-large-v3-turbo",
         ocr_backend=_choose(env, "OCR_BACKEND", "vision", OCR_BACKENDS),
         poll_interval=_int(env, "POLL_INTERVAL_SECONDS", 60),
-        lookback_days=_int(env, "POLL_LOOKBACK_DAYS", 14),
         max_items_per_account=_int(env, "MAX_ITEMS_PER_ACCOUNT", 10),
         retry_backoff=tuple(m * 60 for m in backoff),
-        tag_done=tags["TAG_DONE"], tag_failed=tags["TAG_FAILED"], tag_skip=tags["TAG_SKIP"],
+        tag_failed=tags["TAG_FAILED"], tag_skip=tags["TAG_SKIP"],
         tag_ocr=tags["TAG_OCR"], tag_redo=tags["TAG_REDO"],
         notify_url=env.get("NOTIFY_URL") or None,
     )

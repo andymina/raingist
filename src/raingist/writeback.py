@@ -26,13 +26,12 @@ def choose_tags(generated: list[str], library_tags: list[str], reserved: frozens
             out.append(n); new += 1
     return out
 
-def merge_tags(item_tags: list[str], chosen: list[str], state_tag: str, drop: frozenset[str]) -> list[str]:
-    """Keep existing tags, add chosen + state_tag, remove every tag in `drop` except state_tag."""
+def merge_tags(item_tags: list[str], add: list[str]) -> list[str]:
+    """Existing tags first, then `add`, case-insensitively de-duplicated. Never removes the person's tags."""
     out, seen = [], set()
-    for t in [*item_tags, *chosen, state_tag]:
-        if t.lower() in seen or (t.lower() in drop and t != state_tag):
-            continue
-        seen.add(t.lower()); out.append(t)
+    for t in [*item_tags, *add]:
+        if t.lower() not in seen:
+            seen.add(t.lower()); out.append(t)
     return out
 
 NOTE_TOKEN = re.compile(r"\$(start|end)\.")

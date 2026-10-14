@@ -12,6 +12,7 @@ from .notify import Alerts
 
 log = logging.getLogger(__name__)
 SYSTEMIC_STREAK = 3
+INBOX_TITLE = "raingist"       # each account's processing inbox, found by name
 UNSORTED = -1                  # Raindrop's "Unsorted" collection
 MAX_COLLECTIONS, SAMPLE_TITLES = 50, 5
 
@@ -34,33 +35,27 @@ def extract(s: Settings, ctype: str, item: dict, want_ocr: bool, cache_dir=None)
         cache.save(cache_dir, url, want_ocr, ex)
     return ex
 
-def in_scope(acct: Account, item: dict) -> bool:
-    cid = item.get("collection", {}).get("$id")
-    if acct.inbox_collection is not None:
-        return cid == acct.inbox_collection
-    if acct.include_collections and cid not in acct.include_collections:
-        return False
-    return cid not in acct.exclude_collections
+class InboxMissing(Exception): ...
 
-def blocked(s: Settings, acct: Account, item: dict) -> bool:
-    """Has a state tag that stops processing (redo overrides). In inbox mode leaving the inbox means done,
-    so only failed/skip block; a done-tagged bookmark moved back in is routed again."""
+def find_inbox(collections: list[dict]) -> int:
+    """Id of the account's one collection named INBOX_TITLE (any letter case)."""
+    ids = [c["_id"] for c in collections if c["title"].strip().lower() == INBOX_TITLE]
+    if len(ids) != 1:
+        raise InboxMissing(f"expected exactly one collection named '{INBOX_TITLE}', found {len(ids)}")
+    return ids[0]
+
+def blocked(s: Settings, item: dict) -> bool:
+    """raingist-failed / raingist-skip keep a bookmark waiting in the inbox; raingist-redo overrides them."""
     tags = {t.lower() for t in item.get("tags", [])}
-    if s.tag_redo in tags:
-        return False
-    stop = {s.tag_failed, s.tag_skip} if acct.inbox_collection is not None else s.state_tags
-    return bool(tags & stop)
+    return s.tag_redo not in tags and bool(tags & s.state_tags)
 
-def pending_items(s: Settings, acct: Account, rd: Raindrop) -> list[dict]:
-    if acct.inbox_collection is not None:
-        items = rd.search("", collection=acct.inbox_collection)   # any age: dragging a bookmark in queues it
-    else:
-        items = rd.list_pending(s.lookback_days, s.state_tags, s.tag_redo)
-    return [i for i in items if detect(s, i.get("link", "")) and in_scope(acct, i) and not blocked(s, acct, i)]
+def pending_items(s: Settings, rd: Raindrop, inbox: int) -> list[dict]:
+    """Supported bookmarks in the inbox, any age: dragging a bookmark in queues it."""
+    return [i for i in rd.search("", collection=inbox) if detect(s, i.get("link", "")) and not blocked(s, i)]
 
-def collection_catalog(rd: Raindrop, acct: Account) -> list[dict]:
+def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int) -> list[dict]:
     """Routing candidates: every collection except the inbox, with its path, description and recent titles."""
-    cols = [c for c in rd.collections() if c["_id"] != acct.inbox_collection]
+    cols = [c for c in collections if c["_id"] != inbox]
     by_id = {c["_id"]: c for c in cols}
     def path(c):
         parent = by_id.get((c.get("parent") or {}).get("$id"))
@@ -71,17 +66,16 @@ def collection_catalog(rd: Raindrop, acct: Account) -> list[dict]:
 def route(summary, catalog: list[dict]) -> int:
     return summary.collection_id if summary.collection_id in {c["id"] for c in catalog} else UNSORTED
 
-def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, rid: int,
-                 existing_tags: list[str], dry_run: bool = False, catalog: list[dict] | None = None) -> str:
-    """Returns one of: done, failed, retry, noop. `catalog` (inbox mode) lists the collections to route into."""
+def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, rid: int, existing_tags: list[str],
+                 inbox: int, catalog: list[dict], dry_run: bool = False) -> str:
+    """Returns one of: done, failed, retry, noop. Done = enriched and routed out of the inbox in one PUT."""
     item = rd.get(rid)   # fresh, right before writing
     tags = {t.lower() for t in item.get("tags", [])}
     redo = s.tag_redo in tags
     ctype = detect(s, item.get("link", ""))
-    if ctype is None or not in_scope(acct, item) or blocked(s, acct, item):
+    if ctype is None or item.get("collection", {}).get("$id") != inbox or blocked(s, item):
         return "noop"
     note = writeback.strip_ai_block(item.get("note", "")) if redo else item.get("note", "")
-    drop = s.state_tags | {s.tag_redo}
     owner_note = writeback.owner_note(note)
     if owner_note:
         log.info("[%s] item %s: forwarding %d chars of owner note", acct.id, rid, len(owner_note))
@@ -90,56 +84,57 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
         summary, model = summarize(s, item, ctype, ex, existing_tags, owner_note, catalog)
     except PermanentFailure as e:
         attempts.clear(rid)
-        return _finish(s, acct, rd, item, s.tag_failed, drop, dry_run, note=writeback.merge_failure(note, str(e), today()))
+        return _fail(s, acct, rd, item, writeback.merge_failure(note, str(e), today()), dry_run)
     except TransientFailure as e:
         n = attempts.record_failure(rid, str(e))
         log.warning("[%s] item %s transient failure %d/%d: %s", acct.id, rid, n, attempts.max_attempts, e)
         if n < attempts.max_attempts:
             return "retry"
         attempts.clear(rid)
-        return _finish(s, acct, rd, item, s.tag_failed, drop, dry_run,
-                       note=writeback.merge_failure(note, f"gave up after {n} attempts: {e}", today()))
+        return _fail(s, acct, rd, item, writeback.merge_failure(note, f"gave up after {n} attempts: {e}", today()), dry_run)
     chosen = writeback.choose_tags(summary.tags, existing_tags, s.reserved_tags)
-    block = writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))
     log.info("[%s] item %s summarized from %s by %s (confidence %s, lang %s)",
              acct.id, rid, ex.source, model, summary.confidence, summary.language)
-    fields = {"note": writeback.merge_note(note, block),
-              "tags": writeback.merge_tags(item.get("tags", []), chosen, s.tag_done, drop)}
+    dest = route(summary, catalog)
+    fields = {"note": writeback.merge_note(note, writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))),
+              "tags": writeback.strip_reserved(writeback.merge_tags(item.get("tags", []), chosen)),
+              "collection": {"$id": dest}}
     if writeback.is_placeholder_title(item.get("title"), item["link"]) and summary.title.strip():
         fields["title"] = summary.title.strip()[:1000]
-    if catalog is not None:   # inbox mode: leaving the inbox is the done state, so no raingist-* tags stay
-        fields["tags"] = writeback.strip_reserved(fields["tags"])
-        dest = route(summary, catalog)
-        fields["collection"] = {"$id": dest}
-        log.info("[%s] item %s -> collection %s", acct.id, rid,
-                 next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"))
+    log.info("[%s] item %s -> collection %s", acct.id, rid, next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"))
     attempts.clear(rid)
-    return _finish(s, acct, rd, item, s.tag_done, drop, dry_run, **fields)
+    _put(acct, rd, item, dry_run, fields)
+    return "done"
 
-def _finish(s: Settings, acct: Account, rd: Raindrop, item: dict, state_tag: str, drop: frozenset[str],
-            dry_run: bool, **fields) -> str:
-    fields.setdefault("tags", writeback.merge_tags(item.get("tags", []), [], state_tag, drop))
+def _fail(s: Settings, acct: Account, rd: Raindrop, item: dict, note: str, dry_run: bool) -> str:
+    """Stays in the inbox, tagged raingist-failed (redo dropped so it doesn't loop), with the reason in the note."""
+    tags = [t for t in item.get("tags", []) if t.lower() != s.tag_redo]
+    _put(acct, rd, item, dry_run, {"note": note, "tags": writeback.merge_tags(tags, [s.tag_failed])})
+    return "failed"
+
+def _put(acct: Account, rd: Raindrop, item: dict, dry_run: bool, fields: dict) -> None:
     if dry_run:
         log.info("[%s] DRY-RUN PUT /raindrop/%s %s", acct.id, item["_id"], fields)
     else:
         rd.update(item["_id"], **fields)
-    return {s.tag_done: "done", s.tag_failed: "failed"}[state_tag]
 
 def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = False, limit: int | None = None) -> dict:
     rd = Raindrop(access_token(s, acct))
     state_dir = s.state_dir / str(acct.id)
     state_dir.mkdir(parents=True, exist_ok=True)
     attempts = Attempts(state_dir / "attempts.json", s.retry_backoff)
-    pending = [i for i in pending_items(s, acct, rd) if attempts.due(i["_id"])]
+    collections = rd.collections()
+    inbox = find_inbox(collections)
+    pending = [i for i in pending_items(s, rd, inbox) if attempts.due(i["_id"])]
     pending = pending[: limit or s.max_items_per_account]
     existing_tags = rd.tags() if pending else []
-    catalog = collection_catalog(rd, acct) if pending and acct.inbox_collection is not None else None
+    catalog = collection_catalog(rd, collections, inbox) if pending else []
     counts: dict[str, int] = {}
     streak, last_error = 0, ""
     for item in pending:
         rid = item["_id"]
         try:
-            r = process_item(s, acct, rd, attempts, rid, existing_tags, dry_run=dry_run, catalog=catalog)
+            r = process_item(s, acct, rd, attempts, rid, existing_tags, inbox, catalog, dry_run=dry_run)
         except Exception as e:   # one bad item must not stop the rest; logged with traceback, alerted via streak
             log.exception("[%s] item %s crashed: %s", acct.id, rid, e)
             r, last_error = "crash", str(e)

@@ -1,4 +1,4 @@
-import time, datetime as dt
+import time
 import httpx
 
 BASE = "https://api.raindrop.io/rest/v1"
@@ -58,16 +58,6 @@ class Raindrop:
                 break
         return items
 
-    def list_pending(self, lookback_days: int, state_tags: frozenset[str], redo_tag: str) -> list[dict]:
-        since = (dt.datetime.now(dt.UTC) - dt.timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-        new = self.search(" ".join(f"-#{t}" for t in sorted(state_tags)) + f" created:>{since}")
-        new = [i for i in new if not ({t.lower() for t in i.get("tags", [])} & state_tags)]
-        seen, out = set(), []
-        for i in self.search(f"#{redo_tag}", max_pages=1) + new:
-            if i["_id"] not in seen:
-                seen.add(i["_id"]); out.append(i)
-        return out
-
     def get(self, rid: int) -> dict:
         return self._req("GET", f"/raindrop/{rid}")["item"]
 
@@ -75,8 +65,9 @@ class Raindrop:
         return self._req("PUT", f"/raindrop/{rid}", json=fields)["item"]
 
     def collections(self) -> list[dict]:
-        """Every collection, top-level and nested."""
-        return self._req("GET", "/collections")["items"] + self._req("GET", "/collections/childrens")["items"]
+        """Every collection, top-level and nested, once each (/collections/childrens also returns top-level ones)."""
+        both = self._req("GET", "/collections")["items"] + self._req("GET", "/collections/childrens")["items"]
+        return list({c["_id"]: c for c in both}.values())
 
     def recent_titles(self, collection: int, n: int) -> list[str]:
         items = self._req("GET", f"/raindrops/{collection}", params={"sort": "-created", "perpage": n}).get("items", [])

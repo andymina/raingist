@@ -108,7 +108,7 @@ Uninstall the service: `launchctl bootout gui/$(id -u)/com.raingist.serve`
 
 ## Polling
 
-The service checks Raindrop **every 60 seconds** (`POLL_INTERVAL_SECONDS=60` in `.env`; change it, then run `uv run raingist restart`). It processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account per cycle, and only bookmarks created in the last `POLL_LOOKBACK_DAYS` (14). An idle cycle costs 2 Raindrop API requests, against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
+The service checks Raindrop **every 60 seconds** (`POLL_INTERVAL_SECONDS=60` in `.env`; change it, then run `uv run raingist restart`). Each cycle processes at most `MAX_ITEMS_PER_ACCOUNT` (10) bookmarks per account from its `raingist` collection. An idle cycle costs 3 Raindrop API requests (two to list collections, one to read the inbox), against a limit of 120 per minute. TikTok and Gemini are called only when there is a bookmark to process, so the interval doesn't affect their limits. A cycle that runs longer than the interval is followed immediately by the next one; cycles never overlap.
 
 ## The AI block
 
@@ -140,7 +140,8 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - **Where it goes:** the same Gemini call that writes the summary picks a destination. It compares the bookmark with each collection's name, description and 5 most recent bookmark titles (nested collections included, as `Parent / Child`). A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
 - **Moving back in without `raingist-redo`** keeps the existing summary and just re-routes the bookmark.
 - **Failures stay in the inbox**, tagged `raingist-failed` with the reason in the note. So do non-TikToks, untouched. Retries in progress also wait there.
-- Inbox mode is per account (`inbox_collection` in `DATA_DIR/accounts/<id>.json`). The owner's inbox is `raingist` (id 76070344).
+- Each account's inbox is its one collection named `raingist` (any letter case), found by name every cycle. If an account has none, or more than one, its cycle stops with an `account:<id>` alert saying so.
+- The service never touches bookmarks outside `raingist`.
 
 ## Tags
 
@@ -150,7 +151,6 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 | `raingist-skip` | you | Leave this bookmark alone |
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
 | `raingist-redo` | you | Reprocess: the old AI block is replaced |
-| `raingist-done` | service | Tag mode only (accounts without an inbox): enriched |
 
 All `raingist-*` tags are removed when a bookmark leaves the inbox. All names are configurable (`TAG_*`, must keep the `raingist-` prefix). Topic tags: the service only adds them, never removes yours, and prefers your existing tags: one that largely fits wins over a new, more precise one. Typically a bookmark gets 2–4 tags, often with no new ones; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
 
@@ -195,10 +195,6 @@ Alerts go to `NOTIFY_URL` (ntfy), at most once every 6 h per alert key. Without 
 - an invalid account file
 - 3 failing bookmarks in a row within one account's cycle
 - each bookmark marked `raingist-failed`
-
-## Tag mode and collection filters
-
-An account without `inbox_collection` runs in tag mode: it processes TikToks from the last 14 days anywhere in the library, marks them `raingist-done`, and leaves them where they are. `include_collections` / `exclude_collections` (lists of collection ids) narrow that down. Filters match a bookmark's own collection exactly, so sub-collections must be listed separately; Unsorted is `-1`. Reconnecting keeps all of these settings.
 
 ## Hosting later
 

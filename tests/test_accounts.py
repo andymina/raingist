@@ -5,7 +5,7 @@ import raingist.accounts as accounts
 from raingist.accounts import AccountError, store
 
 def test_round_trip_and_mode(settings, make_account):
-    acct = make_account(settings, 7, include_collections=[3])
+    acct = make_account(settings, 7, enabled=False)
     assert store(settings).load(settings, 7) == acct
     assert stat.S_IMODE(os.stat(settings.accounts_dir / "7.json").st_mode) == 0o600
     assert store(settings).ids(settings) == [7]
@@ -47,11 +47,10 @@ def test_connect_new_and_reconnect(settings, monkeypatch):
     acct = accounts.connect(settings, " code1 ")
     assert payloads[0]["grant_type"] == "authorization_code" and payloads[0]["code"] == "code1"
     assert (acct.id, acct.name, acct.enabled) == (42, "Owner", True)
-    acct.enabled, acct.include_collections, acct.exclude_collections, acct.inbox_collection = False, [1], [2], 3
+    acct.enabled = False
     store(settings).save(settings, acct)
     again = accounts.connect(settings, "code2")
-    assert again.access_token == "at2"
-    assert (again.enabled, again.include_collections, again.exclude_collections, again.inbox_collection) == (False, [1], [2], 3)
+    assert (again.access_token, again.enabled) == ("at2", False)
 
 def test_authorize_url():
     from raingist.raindrop import authorize_url
@@ -70,3 +69,11 @@ def test_token_request_errors(monkeypatch, response, match):
     monkeypatch.setattr(raindrop.httpx, "post", lambda *a, **k: response)
     with pytest.raises(raindrop.RaindropError, match=match):
         raindrop.token_request({"grant_type": "authorization_code"})
+
+def test_collections_deduplicated(monkeypatch):
+    from raingist.raindrop import Raindrop
+    rd = Raindrop("t")
+    replies = {"/collections": [{"_id": 1, "title": "raingist"}],
+               "/collections/childrens": [{"_id": 1, "title": "raingist"}, {"_id": 2, "title": "Sub"}]}
+    monkeypatch.setattr(rd, "_req", lambda method, path, **kw: {"items": replies[path]})
+    assert [c["_id"] for c in rd.collections()] == [1, 2]

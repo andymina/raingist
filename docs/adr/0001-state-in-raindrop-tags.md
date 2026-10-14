@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0007
+---
+
 # State lives in Raindrop tags
 
 ## Context

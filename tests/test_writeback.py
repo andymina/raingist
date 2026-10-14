@@ -1,8 +1,7 @@
 from raingist.llm.prompt import Summary
 from raingist import writeback as wb
 
-RESERVED = frozenset({"raingist-done", "raingist-failed", "raingist-skip", "raingist-ocr", "raingist-redo"})
-STATE = frozenset({"raingist-done", "raingist-failed", "raingist-skip"})
+RESERVED = frozenset({"raingist-failed", "raingist-skip", "raingist-ocr", "raingist-redo"})
 
 def block(text="Sum."):
     return wb.build_block(Summary(summary=text, key_takeaways=["a"], language="en"))
@@ -26,9 +25,8 @@ def test_strip_ai_block():
     assert wb.strip_ai_block(note) == "before\n\nafter"
 
 def test_merge_tags():
-    out = wb.merge_tags(["Mine", "raingist-redo", "raingist-ocr"], ["cooking", "mine"], "raingist-done", STATE | {"raingist-redo"})
-    assert out == ["Mine", "raingist-ocr", "cooking", "raingist-done"]
-    assert wb.merge_tags(["raingist-done", "raingist-failed"], [], "raingist-failed", STATE) == ["raingist-failed"]
+    assert wb.merge_tags(["Mine", "raingist-ocr"], ["cooking", "mine"]) == ["Mine", "raingist-ocr", "cooking"]
+    assert wb.strip_reserved(["Mine", "Raingist-OCR", "raingist-redo", "cooking"]) == ["Mine", "cooking"]
 
 def test_choose_tags():
     gen = ["Cooking", "raingist-done", "Personal Finance", "a", "b", "c", "d", "e", "f", "g"]
