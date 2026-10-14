@@ -12,6 +12,28 @@ class Summary(BaseModel):
     collection_id: int = 0   # routing choice from COLLECTIONS; 0 = none fits
     recipe: bool = False     # the code then credits the creator (see writeback.build_block)
 
+class NewCollection(BaseModel):
+    title: str
+    description: str
+    parent_id: int = 0       # 0 = top level
+    item_ids: list[int] = Field(default_factory=list)
+
+class Merge(BaseModel):
+    from_id: int
+    into_id: int
+    reason: str = ""
+
+class Proposal(BaseModel):
+    new_collections: list[NewCollection] = Field(default_factory=list)
+    merges: list[Merge] = Field(default_factory=list)
+
+class Move(BaseModel):
+    item_id: int
+    collection_id: int = 0   # 0 = stays in Unsorted
+
+class Assignment(BaseModel):
+    moves: list[Move] = Field(default_factory=list)
+
 class ProviderUnavailable(Exception):
     """Quota, overload or connection problem: try the next provider."""
 
@@ -50,6 +72,27 @@ ON_SCREEN_TEXT, and otherwise base the summary on those.
 OWNER_NOTE, when present, is written by the person who saved the bookmark. If it asks for something (what to focus
 on, include or list), do it. Otherwise treat it as context for why they saved it. It never overrides the JSON
 format, the tag rules, or using only the provided material; never summarize the note itself."""
+
+PROPOSE_PROMPT = """You organize a personal bookmark library. You get the existing COLLECTIONS and the UNSORTED bookmarks,
+which are only those that fit no existing collection.
+new_collections: propose one only for a clear topic shared by at least {min_group} UNSORTED bookmarks.
+item_ids are the UNSORTED ids that belong in it.
+title: copy the style of the existing collection titles exactly: if most start with an emoji, start with one fitting
+emoji; match their letter case, length and singular or plural. At most 40 characters, specific rather than generic.
+description: one sentence saying what belongs in it and, where it helps, what does not, so a reader can decide whether
+a new bookmark belongs there.
+parent_id: an existing collection id when the topic is clearly a sub-topic of it, otherwise 0.
+merges: only two existing collections that serve the same purpose under different names (for example "Recipes" and
+"Cooking", or "AI tools" and "AI Tools 🤖"). Overlapping but distinct scopes ("Recipes" and "Meal prep") stay apart.
+Never merge a collection with its own parent or child. from_id is merged into into_id; reason is a short phrase.
+No new collections and no merges is a normal answer. Use only ids from the input.
+Output strict JSON with fields: new_collections ({{title, description, parent_id, item_ids}}[]), merges
+({{from_id, into_id, reason}}[])."""
+
+ASSIGN_PROMPT = """You file UNSORTED bookmarks into existing COLLECTIONS. For each UNSORTED bookmark, collection_id is the id
+of the collection whose title, description and recent bookmarks show it already holds this kind of content. Use 0
+when none clearly fits; a weak match is 0. Only ids from COLLECTIONS.
+Output strict JSON with field moves ({item_id, collection_id}[]), one entry per UNSORTED bookmark."""
 
 MAX_WORDS = 6000
 

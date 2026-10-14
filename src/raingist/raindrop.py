@@ -47,11 +47,11 @@ class Raindrop:
             return data
         raise RaindropError(f"{method} {path}: retries exhausted")
 
-    def search(self, query: str, max_pages: int = 10, collection: int = 0) -> list[dict]:
-        """Bookmarks matching `query` in `collection` (0 = all except Trash), newest first."""
+    def search(self, query: str, max_pages: int = 10, collection: int = 0, sort: str = "-created") -> list[dict]:
+        """Bookmarks matching `query` in `collection` (0 = all except Trash), newest first by default."""
         items: list[dict] = []
         for page in range(max_pages):
-            params = {"sort": "-created", "perpage": 50, "page": page} | ({"search": query} if query else {})
+            params = {"sort": sort, "perpage": 50, "page": page} | ({"search": query} if query else {})
             batch = self._req("GET", f"/raindrops/{collection}", params=params).get("items", [])
             items.extend(batch)
             if len(batch) < 50:
@@ -68,6 +68,22 @@ class Raindrop:
         """Every collection, top-level and nested, once each (/collections/childrens also returns top-level ones)."""
         both = self._req("GET", "/collections")["items"] + self._req("GET", "/collections/childrens")["items"]
         return list({c["_id"]: c for c in both}.values())
+
+    def create_collection(self, title: str, description: str, parent: int = 0) -> dict:
+        body = {"title": title, "description": description} | ({"parent": {"$id": parent}} if parent else {})
+        return self._req("POST", "/collection", json=body)["item"]
+
+    def move_many(self, from_collection: int, ids: list[int], to: int) -> int:
+        """Move `ids` (all in `from_collection`) to collection `to`. Returns how many Raindrop reports modified."""
+        moved = 0
+        for i in range(0, len(ids), 100):   # shortcut: chunk size is a guess, the API documents no limit
+            moved += self._req("PUT", f"/raindrops/{from_collection}",
+                               json={"ids": ids[i:i + 100], "collection": {"$id": to}}).get("modified", 0)
+        return moved
+
+    def delete_collection(self, cid: int) -> None:
+        """Deletes the collection and its descendants; any bookmarks still in it go to Trash, so empty it first."""
+        self._req("DELETE", f"/collection/{cid}")
 
     def recent_titles(self, collection: int, n: int) -> list[str]:
         items = self._req("GET", f"/raindrops/{collection}", params={"sort": "-created", "perpage": n}).get("items", [])

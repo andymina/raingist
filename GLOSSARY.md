@@ -20,6 +20,16 @@ _Avoid_: queue, processing box
 Moving a finished Bookmark out of the Inbox into the collection that already holds similar content, or Unsorted if none does.
 _Avoid_: filing, sorting
 
+**Organizing**:
+The daily run that files Unsorted Bookmarks into collections, creates a collection for a topic with enough Bookmarks, and merges collections that serve the same purpose.
+_Avoid_: cleanup, auto-sort, librarian
+
+**Excluded collection**:
+A collection whose description contains `#raingist-exclude`. The Service never routes to, files into, merges or nests under it.
+
+**Provenance**:
+The `(created by raingist)` suffix on the description of a collection that Organizing created. A collection without it is the owner's, and survives any merge with one that has it.
+
 **Bookmark**:
 A Raindrop item. The Service never destroys its existing Note or Tags.
 _Avoid_: raindrop, item, link, save

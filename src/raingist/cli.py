@@ -5,6 +5,7 @@ from .accounts import AccountError, store, connect, access_token
 from .raindrop import Raindrop, authorize_url
 from .oauth_callback import wait_for_code
 from .state import Attempts, RunLock, Busy
+from .organize import run_due
 from .pipeline import run_cycle, process_item, extract, pending_items, collection_catalog, find_inbox
 from .extract import detect
 from .llm import summarize
@@ -54,6 +55,8 @@ def cmd_serve(s, args):
             try:
                 with RunLock(s.state_dir / "run.lock"):
                     run_cycle(s, alerts)
+                    if s.organize_enabled:
+                        run_due(s, alerts)
             except Busy as e:
                 log.info("%s; skipping", e)
             except Exception as e:   # keep serving; the alert makes it visible
@@ -91,7 +94,13 @@ def service_line(s) -> str:
 def cmd_once(s, args):
     require_data(s)
     with RunLock(s.state_dir / "run.lock"):
-        print(run_cycle(s, Alerts(s.notify_url), only=args.account, dry_run=args.dry_run, limit=args.limit))
+        print(run_cycle(s, Alerts(None if args.dry_run else s.notify_url), only=args.account, dry_run=args.dry_run, limit=args.limit))
+
+def cmd_organize(s, args):
+    """Organize Unsorted now if due (or always with --force). Works even with ORGANIZE_ENABLED=0."""
+    require_data(s)
+    with RunLock(s.state_dir / "run.lock"):
+        print(run_due(s, Alerts(None if args.dry_run else s.notify_url), only=args.account, dry_run=args.dry_run, force=args.force))
 
 def cmd_process(s, args):
     require_data(s)
@@ -154,6 +163,8 @@ def cmd_status(s, args):
         print(f"== {aid} {acct.name} enabled={acct.enabled} inbox={inbox} pending={len(pending_items(s, rd, inbox))}")
         print("   last cycle:", status.read_text().strip() if status.exists() else "never")
         print("   retrying:", json.dumps(attempts.data))
+        organize = s.state_dir / str(aid) / "organize.json"
+        print(f"   organize (enabled={s.organize_enabled}):", organize.read_text().strip() if organize.exists() else "never")
 
 def cmd_restart(s, args):
     """Restart the launchd agent (pick up code or .env changes)."""
@@ -165,6 +176,9 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve")
     o = sub.add_parser("once"); o.add_argument("--account", type=int); o.add_argument("--dry-run", action="store_true"); o.add_argument("--limit", type=int)
+    g = sub.add_parser("organize", help="file Unsorted, create and merge collections (ADR 0008)")
+    g.add_argument("--account", type=int); g.add_argument("--dry-run", action="store_true")
+    g.add_argument("--force", action="store_true", help="run now even if not due or below ORGANIZE_FIRST_RUN")
     p = sub.add_parser("process"); p.add_argument("--account", type=int, required=True); p.add_argument("--id", type=int, required=True); p.add_argument("--dry-run", action="store_true")
     t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note; $start./$end. limit what is sent")
     sub.add_parser("connect")
@@ -177,5 +191,5 @@ def main():
     logging.basicConfig(level=logging.INFO, format=FMT, stream=sys.stdout)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     s = load_settings()
-    {"serve": cmd_serve, "once": cmd_once, "process": cmd_process, "test": cmd_test,
+    {"serve": cmd_serve, "once": cmd_once, "organize": cmd_organize, "process": cmd_process, "test": cmd_test,
      "connect": cmd_connect, "accounts": cmd_accounts, "status": cmd_status, "restart": cmd_restart}[args.cmd](s, args)

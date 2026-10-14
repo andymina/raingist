@@ -97,11 +97,12 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
 |---|---|
 | `serve` | Long-running loop (what launchd runs) |
 | `once [--account ID] [--dry-run] [--limit N]` | One cycle now. `--dry-run` logs the would-be `PUT`s |
+| `organize [--account ID] [--dry-run] [--force]` | Organize Unsorted if due; `--force` runs it now regardless of schedule or threshold, even with `ORGANIZE_ENABLED=0`. Dry runs (`once` too) send no alerts |
 | `process --account ID --id RAINDROP_ID [--dry-run]` | One bookmark |
 | `test --url URL [--ocr] [--note TEXT]` | Extract and summarize one URL without touching Raindrop; `--note` tries an owner note |
 | `connect` | OAuth-connect (or reconnect) a Raindrop account |
 | `accounts [list\|enable\|disable\|disconnect] [ID]` | Manage connected accounts |
-| `status` | Whether the service is running and when it polls next; per account: filters, pending count, last cycle, items being retried |
+| `status` | Whether the service is running and when it polls next; per account: filters, pending count, last cycle, items being retried, last organize run |
 | `restart` | Restart the background service, e.g. after code or `.env` changes |
 
 Uninstall the service: `launchctl bootout gui/$(id -u)/com.raingist.serve`
@@ -141,14 +142,34 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - **Moving back in without `raingist-redo`** keeps the existing summary and just re-routes the bookmark.
 - **Failures stay in the inbox**, tagged `raingist-failed` with the reason in the note. So do non-TikToks, untouched. Retries in progress also wait there.
 - Each account's inbox is its one collection named `raingist` (any letter case), found by name every cycle. If an account has none, or more than one, its cycle stops with an `account:<id>` alert saying so.
-- The service never touches bookmarks outside `raingist`.
+- Apart from Organizing (below), the service never touches bookmarks outside `raingist`.
+
+## Organizing Unsorted
+
+On by default (`ORGANIZE_ENABLED=0` turns it off). The first run happens once Unsorted holds 30 bookmarks (`ORGANIZE_FIRST_RUN`). After that it runs daily, on the first cycle after 10:00 New York time. Each run:
+
+1. **Files** Unsorted bookmarks into existing collections, on the same "clear fit" bar as routing.
+2. **Creates collections** from what is left, for topics shared by at least 5 bookmarks (`ORGANIZE_MIN_GROUP`). The title copies your naming style. The description is one scope sentence ending in `(created by raingist)`. A new collection can sit at the top level or one level under an existing one. A title that clashes with an existing collection files into that collection instead.
+3. **Merges** collections that serve the same purpose under different names ("Recipes" and "Cooking"). Yours survives over one raingist made; otherwise the larger survives. The emptied collection is deleted. Parents, children and shared collections are never merge sources.
+
+It reads each bookmark's title, tags, excerpt and whole note, oldest 200 first (`ORGANIZE_MAX_ITEMS`). It makes at most two Gemini calls per run: the second sees only the bookmarks the first couldn't file.
+
+| You want to | Do this |
+|---|---|
+| Keep a collection out of it (and out of routing) | Put `#raingist-exclude` anywhere in its description |
+| Keep a bookmark in Unsorted | Tag it `raingist-skip` |
+| Make a raingist-made collection yours | Delete `(created by raingist)` from its description |
+| Preview a run | `uv run raingist organize --dry-run --force` |
+| See what a run did, or rebuild a merged-away collection | `DATA_DIR/state/<account>/organize/<time>.json` |
+
+You get an alert only when something changed. A failed run alerts and retries an hour later; what it already did stays done.
 
 ## Tags
 
 | Tag | Set by | Meaning |
 |---|---|---|
 | `raingist-failed` | service | Gave up; the reason is on a `_raingist-failed: …_` line in the note |
-| `raingist-skip` | you | Leave this bookmark alone |
+| `raingist-skip` | you | Leave this bookmark alone (in the inbox, and in Unsorted when Organizing) |
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
 | `raingist-redo` | you | Reprocess: the old AI block is replaced |
 

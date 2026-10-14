@@ -31,6 +31,10 @@ class Settings:
     tag_ocr: str
     tag_redo: str
     notify_url: str | None
+    organize_enabled: bool
+    organize_first_run: int
+    organize_min_group: int
+    organize_max_items: int
 
     @property
     def state_tags(self) -> frozenset[str]:
@@ -67,6 +71,18 @@ def _int(env: Mapping, key: str, default: int) -> int:
         return int(env.get(key) or default)
     except ValueError:
         fail(f"{key} must be an integer")
+
+def _positive(env: Mapping, key: str, default: int) -> int:
+    n = _int(env, key, default)
+    if n < 1:
+        fail(f"{key} must be at least 1")
+    return n
+
+def _bool(env: Mapping, key: str, default: str) -> bool:
+    value = (env.get(key) or default).strip().lower()
+    if value not in ("0", "1", "true", "false"):
+        fail(f"{key} must be 1 or 0")
+    return value in ("1", "true")
 
 def _names(env: Mapping, key: str, default: str) -> tuple[str, ...]:
     return tuple(x.strip() for x in (env.get(key) or default).split(",") if x.strip())
@@ -130,6 +146,10 @@ def load_settings(env: Mapping | None = None) -> Settings:
         tag_failed=tags["TAG_FAILED"], tag_skip=tags["TAG_SKIP"],
         tag_ocr=tags["TAG_OCR"], tag_redo=tags["TAG_REDO"],
         notify_url=env.get("NOTIFY_URL") or None,
+        organize_enabled=_bool(env, "ORGANIZE_ENABLED", "1"),
+        organize_first_run=_positive(env, "ORGANIZE_FIRST_RUN", 30),
+        organize_min_group=_positive(env, "ORGANIZE_MIN_GROUP", 5),
+        organize_max_items=_positive(env, "ORGANIZE_MAX_ITEMS", 200),
     )
 
 def data_ready(s: Settings) -> bool:

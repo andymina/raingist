@@ -15,6 +15,8 @@ SYSTEMIC_STREAK = 3
 INBOX_TITLE = "raingist"       # each account's processing inbox, found by name
 UNSORTED = -1                  # Raindrop's "Unsorted" collection
 MAX_COLLECTIONS, SAMPLE_TITLES = 50, 5
+EXCLUDE_MARK = "#raingist-exclude"         # in a collection's description: the service never touches it
+PROVENANCE = "(created by raingist)"       # ends the description of collections Organizing created
 
 def today() -> str:
     return dt.date.today().isoformat()
@@ -53,9 +55,12 @@ def pending_items(s: Settings, rd: Raindrop, inbox: int) -> list[dict]:
     """Supported bookmarks in the inbox, any age: dragging a bookmark in queues it."""
     return [i for i in rd.search("", collection=inbox) if detect(s, i.get("link", "")) and not blocked(s, i)]
 
+def excluded(c: dict) -> bool:
+    return EXCLUDE_MARK in (c.get("description") or "").lower()
+
 def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int) -> list[dict]:
-    """Routing candidates: every collection except the inbox, with its path, description and recent titles."""
-    cols = [c for c in collections if c["_id"] != inbox]
+    """Routing candidates: every collection except the inbox and excluded ones, with path, description and recent titles."""
+    cols = [c for c in collections if c["_id"] != inbox and not excluded(c)]
     by_id = {c["_id"]: c for c in cols}
     def path(c):
         parent = by_id.get((c.get("parent") or {}).get("$id"))
