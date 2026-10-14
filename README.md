@@ -124,7 +124,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 - **Summary:** one or two terse sentences that open with the subject itself. The person who posted it is left out (their handle is never sent to Gemini).
 - **Takeaways:** one line per distinct point, written `Name: what it is or does` for lists.
 - **Searchable wording:** exact names, tools, people, brands and buzzwords from the source are kept, so free-text search finds the bookmark later.
-- **Recipes:** the takeaways are the full recipe in order: an `Ingredients:` line with every amount, then one line per step with its times, temperatures and heat settings. Every quantity mentioned anywhere (caption, speech, on-screen text) is kept.
+- **Recipes:** the takeaways start with `Creator: <name> (@handle)`, taken from TikTok's own data, then the full recipe in order: an `Ingredients:` line with every amount, then one line per step with its times, temperatures and heat settings. Every quantity mentioned anywhere (caption, speech, on-screen text) is kept.
 - **Length:** decided by the content, not a fixed count. The only cap is Raindrop's 10,000-character limit per note.
 - The source and model used are logged, not written into the note.
 

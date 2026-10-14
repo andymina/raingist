@@ -10,6 +10,7 @@ class Summary(BaseModel):
     language: str = "en"
     confidence: Literal["high", "medium", "low"] = "medium"
     collection_id: int = 0   # routing choice from COLLECTIONS; 0 = none fits
+    recipe: bool = False     # the code then credits the creator (see writeback.build_block)
 
 class ProviderUnavailable(Exception):
     """Quota, overload or connection problem: try the next provider."""
@@ -39,7 +40,8 @@ on-screen text) is kept, attached to its ingredient or step: "1 tsp dashi powder
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]), title (string),
-language (ISO 639-1), confidence ("high"|"medium"|"low"), collection_id (integer).
+language (ISO 639-1), confidence ("high"|"medium"|"low"), collection_id (integer), recipe (boolean: true when the
+material is a recipe for food or drink).
 collection_id: when COLLECTIONS is present, the id of the collection whose title, description and recent bookmarks
 show it already holds this kind of content. Use 0 when none clearly fits; a weak match is 0. Only ids from COLLECTIONS.
 AUDIO, when present, means the video uses a reused sound (a song or another person's audio), so TEXT may be lyrics

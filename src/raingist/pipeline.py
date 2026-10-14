@@ -100,7 +100,7 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
         return _finish(s, acct, rd, item, s.tag_failed, drop, dry_run,
                        note=writeback.merge_failure(note, f"gave up after {n} attempts: {e}", today()))
     chosen = writeback.choose_tags(summary.tags, existing_tags, s.reserved_tags)
-    block = writeback.build_block(summary)
+    block = writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))
     log.info("[%s] item %s summarized from %s by %s (confidence %s, lang %s)",
              acct.id, rid, ex.source, model, summary.confidence, summary.language)
     fields = {"note": writeback.merge_note(note, block),

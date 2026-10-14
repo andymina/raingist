@@ -79,8 +79,17 @@ def strip_ai_block(note: str) -> str:
 def _one_line(text: str) -> str:
     return " ".join(text.split())   # strip_ai_block relies on one line per summary/takeaway
 
-def build_block(summary) -> str:
-    return "\n".join([MARKER, _one_line(summary.summary),
+def creator_label(name: str | None, handle: str | None) -> str | None:
+    """'Cassie Yeung (@cassyeungmoney)', '@cassyeungmoney' or None, from the platform's own data."""
+    tag = f"@{handle}" if handle else None
+    if name and tag and name.lower().replace(" ", "") != handle.lower():
+        return f"{name} ({tag})"
+    return tag or name or None
+
+def build_block(summary, creator: str | None = None) -> str:
+    """Recipes credit their creator on the first takeaway line."""
+    credit = [f"- Creator: {creator}"] if summary.recipe and creator else []
+    return "\n".join([MARKER, _one_line(summary.summary), *credit,
                       *[f"- {_one_line(t)}" for t in summary.key_takeaways if t.strip()]])
 
 def merge_note(existing: str, block: str) -> str:

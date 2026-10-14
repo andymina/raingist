@@ -68,3 +68,18 @@ def test_owner_note():
     assert wb.owner_note(note) == "mine"   # never the AI block
     assert wb.owner_note("plain\n\n" + block("Sum.")) == "plain"
     assert wb.owner_note("plain\n\n_raingist-failed: x · 2026-10-01_") == "plain"
+
+def test_recipe_credits_creator():
+    recipe = Summary(summary="Curry udon.", key_takeaways=["Ingredients: 2 eggs"], recipe=True)
+    b = wb.build_block(recipe, "Cassie Yeung (@cassyeungmoney)")
+    assert b.splitlines()[2] == "- Creator: Cassie Yeung (@cassyeungmoney)"
+    assert wb.strip_ai_block("mine\n\n" + b) == "mine"
+    assert "Creator:" not in wb.build_block(Summary(summary="Plugins.", key_takeaways=["x"]), "@someone")
+    assert "Creator:" not in wb.build_block(recipe, None)
+
+def test_creator_label():
+    assert wb.creator_label("Cassie Yeung", "cassyeungmoney") == "Cassie Yeung (@cassyeungmoney)"
+    assert wb.creator_label("patrox", "patrox") == "@patrox"
+    assert wb.creator_label(None, "patrox") == "@patrox"
+    assert wb.creator_label("Name Only", None) == "Name Only"
+    assert wb.creator_label(None, None) is None

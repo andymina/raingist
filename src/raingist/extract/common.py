@@ -10,7 +10,8 @@ class Extraction:
     source: str = "metadata"  # captions | whisper | ocr | metadata
     format: str = "video"     # video | slideshow
     language: str | None = None
-    author: str | None = None
+    author: str | None = None      # @handle
+    creator: str | None = None     # display name
     description: str | None = None
     duration: float | None = None
     sound: str | None = None  # "<track> by <artists>" when the audio is a reused sound, not the creator's own

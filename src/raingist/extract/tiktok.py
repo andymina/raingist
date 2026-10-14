@@ -89,7 +89,8 @@ def extract(s, item: dict, workdir: Path, want_ocr: bool) -> Extraction:
 
 def extract_slideshow(s, client: httpx.Client, html: str, workdir: Path) -> Extraction:
     post = parse_post(html)
-    ex = Extraction(format="slideshow", author=post.get("author", {}).get("uniqueId"), description=post.get("desc"))
+    ex = Extraction(format="slideshow", author=post.get("author", {}).get("uniqueId"),
+                    creator=post.get("author", {}).get("nickname"), description=post.get("desc"))
     urls = image_urls(post)
     if not urls:
         raise TransientFailure("slideshow: no image URLs in page data")
@@ -123,7 +124,7 @@ def extract_video(s, url: str, workdir: Path, want_ocr: bool) -> Extraction:
         "merge_output_format": "mp4",
     }
     info = ytdl.run(url, workdir, opts)
-    ex = Extraction(author=info.get("uploader") or info.get("channel"),
+    ex = Extraction(author=info.get("uploader"), creator=info.get("channel"),
                     description=info.get("description") or oembed(url).get("title"),
                     duration=info.get("duration"), sound=reused_sound(info))
     if ex.sound:
