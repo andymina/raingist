@@ -1,4 +1,5 @@
 import re
+from functools import reduce
 
 MARKER = "**AI summary**"
 LEGACY_FOOTER = "_source:"   # last line of blocks written before 2026-10-14
@@ -34,9 +35,29 @@ def merge_tags(item_tags: list[str], add: list[str]) -> list[str]:
             seen.add(t.lower()); out.append(t)
     return out
 
-def owner_note(note: str) -> str:
-    """The person's own note as sent to the summarizer. Never the AI block or failure line."""
-    return strip_failure_line(strip_ai_block(note or "")).strip()
+NOTE_TOKEN = re.compile(r"\$(start|end)\.")
+
+def split_note(note: str) -> tuple[str, str]:
+    """(owner note, note to keep). The spans between $start./$end. tokens ($start. alone runs to the end,
+    a leading $end. alone starts at the beginning) are the owner note and are cut from the kept note.
+    Without tokens nothing is sent and the note is kept as written."""
+    own = strip_failure_line(note or "")
+    pieces = NOTE_TOKEN.split(own)   # [text, "start"|"end", text, ...]
+    if len(pieces) == 1:
+        return "", note or ""
+    marked, kept, inside = [], [], pieces[1] == "end"
+    for i in range(0, len(pieces), 2):
+        (marked if inside else kept).append(pieces[i])
+        if i + 1 < len(pieces):
+            inside = pieces[i + 1] == "start"
+    return "\n".join(m.strip() for m in marked if m.strip()), reduce(_seam, kept).strip()
+
+def _seam(a: str, b: str) -> str:
+    """Join the text around a cut span: one space inline, else the line breaks, at most one blank line."""
+    a, b = a.rstrip(" \t"), b.lstrip(" \t")
+    na, nb = len(a) - len(a.rstrip("\n")), len(b) - len(b.lstrip("\n"))
+    a, b = a.rstrip("\n"), b.lstrip("\n")
+    return a + ("\n" * min(max(na, nb), 2) or (" " if a and b else "")) + b
 
 def strip_reserved(tags: list[str]) -> list[str]:
     return [t for t in tags if not t.lower().startswith(RESERVED_PREFIX)]

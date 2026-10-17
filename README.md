@@ -185,11 +185,23 @@ Bookmarks from other sites are left untouched and untagged, so a future extracto
 
 ## Steering a summary from the note
 
-Your note is sent to the summarizer as the **owner note**. If it asks for something ("list every tool by name"), the summary does it. Otherwise it's used as context for why you saved the bookmark ("Claude skills").
+Mark the part of your note meant for the summarizer with tokens. That part is the **owner note**: if it asks for something ("list every tool by name", "only cover X and Y"), the summary does it; otherwise it's context for why you saved the bookmark.
 
-- The note itself is never changed; the AI block is appended below it and is never sent back.
+```
+private thoughts $start. List every tool by name with one line on what it does. $end. more private thoughts
+```
+
+| Note contains | Sent to the summarizer, then cut from the note |
+|---|---|
+| No tokens | Nothing; the note is kept as written |
+| `$start. … $end.` (one or more pairs) | The marked spans |
+| `$start.` only | From the token to the end of the note |
+| `$end.` only | From the start of the note to the token |
+| `$start. $end.` | Nothing (the tokens are still cut) |
+
+- Marked spans are cut only once the summary is written; text outside them stays as written, with the gap closed. On failure the note is left as is, so a redo still has your instructions.
+- Nothing is remembered: to steer a redo, add new tokens before adding `raingist-redo`.
 - An owner note can't change the tag rules, and it can't make the summary go beyond the source material.
-- To apply a changed note to an already-processed bookmark, add `raingist-redo`.
 - To try a note without touching Raindrop: `uv run raingist test --url <url> --note '…'`
 
 ## Alerts

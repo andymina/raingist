@@ -42,7 +42,7 @@ _Avoid_: hydration, annotation
 Where a Bookmark stands with the Service: pending (in the Inbox), done (routed out of it), failed (`raingist-failed`), or opted out (`raingist-skip`).
 
 **Owner note**:
-The Bookmark's own Note (without the Enrichment), given to the summarizer. It steers or explains that Bookmark's Enrichment.
+The spans of a Bookmark's Note marked with `$start.` and `$end.`, given to the summarizer and cut from the Note once the Enrichment is written. It steers or explains that Bookmark's Enrichment.
 _Avoid_: owner instructions, prompt, note prompt
 
 **Control tag**:

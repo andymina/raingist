@@ -10,7 +10,7 @@ from .pipeline import run_cycle, process_item, extract, pending_items, collectio
 from .extract import detect
 from .llm import summarize
 from .notify import Alerts
-from .writeback import owner_note
+from .writeback import split_note
 
 log = logging.getLogger("raingist")
 LAUNCHD_LABEL = "com.raingist.serve"   # matches launchd/agent.plist.in
@@ -122,7 +122,7 @@ def cmd_test(s, args):
     t0 = time.monotonic()
     ex = extract(s, ctype, item, want_ocr=args.ocr, cache_dir=s.work_dir / "test-cache")
     print(json.dumps({"content_type": ctype, **ex.to_dict()}, indent=1, ensure_ascii=False)[:4000])
-    summary, model = summarize(s, item, ctype, ex, [], owner_note(args.note))
+    summary, model = summarize(s, item, ctype, ex, [], split_note(args.note)[0])
     print(model)
     print(summary.model_dump_json(indent=1))
     print(f"elapsed: {time.monotonic() - t0:.1f}s")
@@ -180,7 +180,7 @@ def main():
     g.add_argument("--account", type=int); g.add_argument("--dry-run", action="store_true")
     g.add_argument("--force", action="store_true", help="run now even if not due or below ORGANIZE_FIRST_RUN")
     p = sub.add_parser("process"); p.add_argument("--account", type=int, required=True); p.add_argument("--id", type=int, required=True); p.add_argument("--dry-run", action="store_true")
-    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note sent to the summarizer")
+    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note; only $start./$end. spans are sent")
     sub.add_parser("connect")
     a = sub.add_parser("accounts"); a.add_argument("action", nargs="?", choices=["list", "enable", "disable", "disconnect"], default="list"); a.add_argument("id", nargs="?", type=int)
     sub.add_parser("status")

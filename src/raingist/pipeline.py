@@ -81,7 +81,7 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
     if ctype is None or item.get("collection", {}).get("$id") != inbox or blocked(s, item):
         return "noop"
     note = writeback.strip_ai_block(item.get("note", "")) if redo else item.get("note", "")
-    owner_note = writeback.owner_note(note)
+    owner_note, kept = writeback.split_note(note)   # kept: marked spans cut, applied only on success
     if owner_note:
         log.info("[%s] item %s: forwarding %d chars of owner note", acct.id, rid, len(owner_note))
     try:
@@ -101,7 +101,7 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
     log.info("[%s] item %s summarized from %s by %s (confidence %s, lang %s)",
              acct.id, rid, ex.source, model, summary.confidence, summary.language)
     dest = route(summary, catalog)
-    fields = {"note": writeback.merge_note(note, writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))),
+    fields = {"note": writeback.merge_note(kept, writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))),
               "tags": writeback.strip_reserved(writeback.merge_tags(item.get("tags", []), chosen)),
               "collection": {"$id": dest}}
     if writeback.is_placeholder_title(item.get("title"), item["link"]) and summary.title.strip():

@@ -23,7 +23,7 @@ Python is pyenv 3.13 with uv set to system interpreters only (ADR 0005). Run eve
 
 ## Invariants
 
-- **The note is append-only.** The owner's text stays byte-for-byte; the service only appends or replaces its own block (the `**AI summary**` line, one summary line, then `- ` takeaway lines; `strip_ai_block` finds the end by that shape, so keep summary and takeaways one line each) and its `_raingist-failed: …_` line.
+- **The note is append-only, except marked spans.** The owner's text stays byte-for-byte, except that on success `$start. … $end.` spans (the owner note) are cut out (`writeback.split_note`); on failure they stay. The service otherwise only appends or replaces its own block (the `**AI summary**` line, one summary line, then `- ` takeaway lines; `strip_ai_block` finds the end by that shape, so keep summary and takeaways one line each) and its `_raingist-failed: …_` line.
 - **Location is state.** The service only touches bookmarks in each account's collection named `raingist` (`pipeline.find_inbox`). A bookmark there is pending; done means one PUT that writes the note, strips every `raingist-*` tag and sets `collection`. Failures stay in the inbox (ADR 0007).
 - **Outside the inbox, only Organizing writes** (`organize.py`, ADR 0008): it files Unsorted, creates collections and merges them, and never touches an excluded collection (`#raingist-exclude` in its description). A merge deletes its source only after a re-list shows it empty, because a DELETE sends leftover bookmarks to Trash.
 - **The `raingist-` tag prefix is reserved** for state and control tags, which are configurable but must keep the prefix. `choose_tags` drops any generated tag in that namespace.

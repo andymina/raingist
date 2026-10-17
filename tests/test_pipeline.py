@@ -99,18 +99,30 @@ def test_permanent_failure_stays_in_inbox(settings, tmp_path, monkeypatch):
     assert fields["note"].startswith("mine\n\n_raingist-failed: Video is private")
     assert fields["tags"] == ["Mine", "raingist-ocr", "raingist-failed"]
 
-def test_owner_note_forwarded(settings, tmp_path, ok):
-    rd = FakeRaindrop([item(note="Claude skills")])
+def test_marked_span_sent_then_cut(settings, tmp_path, ok):
+    rd = FakeRaindrop([item(note="keep this $start. list every tool $end.")])
     assert run(settings, tmp_path, rd) == "done"
-    assert ok == ["Claude skills"]
-    assert rd.updates[0][1]["note"].startswith("Claude skills\n\n**AI summary**")   # note itself untouched
+    assert ok == ["list every tool"]
+    assert rd.updates[0][1]["note"].startswith("keep this\n\n**AI summary**")
 
-def test_old_tokens_kept_in_note(settings, tmp_path, ok):
-    note = "private\n$start. list every tool $end.\nmore"
+def test_only_marked_span_leaves_just_the_block(settings, tmp_path, ok):
+    rd = FakeRaindrop([item(note="$start. focus on the recipe $end.")])
+    run(settings, tmp_path, rd)
+    assert rd.updates[0][1]["note"].startswith("**AI summary**")
+
+def test_unmarked_note_kept_not_sent(settings, tmp_path, ok):
+    rd = FakeRaindrop([item(note="Claude skills")])
+    run(settings, tmp_path, rd)
+    assert ok == [""]
+    assert rd.updates[0][1]["note"].startswith("Claude skills\n\n**AI summary**")
+
+def test_failure_keeps_marked_span(settings, tmp_path, monkeypatch):
+    def gone(*a, **k): raise PermanentFailure("Video is private")
+    monkeypatch.setattr(pipeline, "extract", gone)
+    note = "mine $start. focus $end."
     rd = FakeRaindrop([item(note=note)])
-    assert run(settings, tmp_path, rd) == "done"
-    assert ok == [note]   # sent whole now
-    assert rd.updates[0][1]["note"].startswith(note + "\n\n**AI summary**")   # owner text byte-for-byte
+    assert run(settings, tmp_path, rd) == "failed"
+    assert rd.updates[0][1]["note"].startswith(note + "\n\n_raingist-failed:")
 
 def test_blocked(settings):
     assert not pipeline.blocked(settings, item())

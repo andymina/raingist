@@ -54,12 +54,19 @@ def test_is_placeholder_title():
     assert not wb.is_placeholder_title("Real title", "https://t/x")
     assert not wb.is_placeholder_title("TikTok tips · my list", "https://t/x")
 
-def test_owner_note():
-    assert wb.owner_note("") == ""
-    assert wb.owner_note("  just my note \n") == "just my note"
-    assert wb.owner_note("mine\n\n" + block("Sum.")) == "mine"   # never the AI block
-    assert wb.owner_note("plain\n\n" + block("Sum.")) == "plain"
-    assert wb.owner_note("plain\n\n_raingist-failed: x · 2026-10-01_") == "plain"
+def test_split_note():
+    sp = wb.split_note
+    assert sp("") == ("", "")
+    assert sp("  just my note \n") == ("", "  just my note \n")   # no tokens: nothing sent, kept as written
+    assert sp("thoughts $start. focus on X $end. more") == ("focus on X", "thoughts more")
+    assert sp("$start.one$end.\nx\n$start. two $end.") == ("one\ntwo", "x")
+    assert sp("intro\n$start. focus on\nthe recipe") == ("focus on\nthe recipe", "intro")   # $start. alone
+    assert sp("send this $end. keep this") == ("send this", "keep this")   # $end. alone
+    assert sp("$start. $end. private") == ("", "private")   # empty span: nothing sent, still cut
+    assert sp("$start. only this $end.") == ("only this", "")
+    assert sp("line1\n$start. X $end.\nline2") == ("X", "line1\nline2")   # span on its own line leaves no gap
+    assert sp("para1\n\n$start. X $end.\n\npara2") == ("X", "para1\n\npara2")
+    assert sp("$start. X $end.\n\n_raingist-failed: x · 2026-10-01_") == ("X", "")
 
 def test_recipe_credits_creator():
     recipe = Summary(summary="Curry udon.", key_takeaways=["Ingredients: 2 eggs"], recipe=True)
