@@ -36,7 +36,7 @@ def test_user_message_optional_sections():
     assert "AUDIO:" not in plain and "OWNER_NOTE:" not in plain
     msg = build_user_message(ITEM, "tiktok", Extraction(sound="Big Fun by Heathers"), [], "list the tools")
     assert "AUDIO: reused sound: Big Fun by Heathers" in msg
-    assert msg.endswith("OWNER_NOTE:\nlist the tools")
+    assert msg.startswith("OWNER_NOTE:\nlist the tools\n")   # ahead of the material
 
 def test_user_message_collections():
     from raingist.llm.prompt import build_user_message

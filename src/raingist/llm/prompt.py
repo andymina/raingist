@@ -44,8 +44,9 @@ number and claim comes from it. If the material is thin, write less and set conf
 summary: one short sentence, two at most, stating the substance itself, like a note to self. Open with the subject
 ("Four free Claude Code plugins: ...", "NFL scoring streaks for week 6: ..."), not with framing about the post
 ("This video highlights...", "The creator shows...").
-key_takeaways: one terse line per distinct point or item in the material, as many as it has and no more. When the
-material lists things, write "Name: what it is or does". Each line adds something the summary does not.
+key_takeaways: one terse line per distinct point or item in the material, as many as it has and no more, unless
+OWNER_NOTE narrows them. When the material lists things, write "Name: what it is or does". Each line adds something
+the summary does not.
 Write about the content only: the person who posted it stays out of the summary, takeaways and title.
 Searchability: use the exact names and terms someone would later type to find this: products, tools, repos, people,
 teams, brands, places, acronyms, jargon and buzzwords, spelled as in the material. Prefer the specific name to a
@@ -69,9 +70,11 @@ show it already holds this kind of content. Use 0 when none clearly fits; a weak
 AUDIO, when present, means the video uses a reused sound (a song or another person's audio), so TEXT may be lyrics
 or someone else's voice rather than the creator's words: use TEXT only where it clearly matches DESCRIPTION or
 ON_SCREEN_TEXT, and otherwise base the summary on those.
-OWNER_NOTE, when present, is written by the person who saved the bookmark. If it asks for something (what to focus
-on, include or list), do it. Otherwise treat it as context for why they saved it. It never overrides the JSON
-format, the tag rules, or using only the provided material; never summarize the note itself."""
+OWNER_NOTE, when present, comes first and is written by the person who saved the bookmark. If it asks for something
+(what to focus on, include, leave out or list), it decides the scope of summary, key_takeaways and title: cover only
+what it asks for and drop everything else, even when the material has more. Otherwise treat it as context for why
+they saved it. It never overrides the JSON format, the tag rules, or using only the provided material; never
+summarize the note itself."""
 
 PROPOSE_PROMPT = """You organize a personal bookmark library. You get the existing COLLECTIONS and the UNSORTED bookmarks,
 which are only those that fit no existing collection.
@@ -106,6 +109,7 @@ def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: li
     words = (ex.text or "").split()
     text = " ".join(words[:MAX_WORDS]) + (" [truncated]" if len(words) > MAX_WORDS else "")
     return "\n".join([
+        *(["OWNER_NOTE:", owner_note] if owner_note else []),   # first, so long material can't bury it
         f"CONTENT_TYPE: {ctype} {ex.format}",
         f"URL: {item.get('link', '')}",
         f"TITLE: {item.get('title', '')}",
@@ -116,5 +120,4 @@ def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: li
         "TEXT:", text or "(none)",
         "ON_SCREEN_TEXT:", ex.onscreen or "(none)",
         *(catalog_lines(catalog) if catalog is not None else []),
-        *(["OWNER_NOTE:", owner_note] if owner_note else []),
     ])
