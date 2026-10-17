@@ -173,7 +173,7 @@ You get an alert only when something changed. A failed run alerts and retries an
 | `raingist-ocr` | you | Also OCR this video's frames (1 frame every 2 s, ≤ 60 frames) |
 | `raingist-redo` | you | Reprocess: the old AI block is replaced |
 
-All `raingist-*` tags are removed when a bookmark leaves the inbox. All names are configurable (`TAG_*`, must keep the `raingist-` prefix). Topic tags: the service only adds them, never removes yours, and prefers your existing tags: one that largely fits wins over a new, more precise one. Typically a bookmark gets 2–4 tags, often with no new ones; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
+All `raingist-*` tags are removed when a bookmark leaves the inbox. All names are configurable (`TAG_*`, must keep the `raingist-` prefix). Topic tags: the service only adds them, never removes yours, and reuses your existing tags only when one truly names a main topic, otherwise it creates a new one. A bookmark gets 2–4 tags, never fewer than 2; new tags are broad `lowercase-hyphen` topics, at most 6. The title is replaced only if it is a placeholder: empty, the URL itself, `TikTok - Make Your Day`, or Raindrop's default `TikTok · <creator name>`. The excerpt is never touched.
 
 ## TikTok: videos vs slideshows
 

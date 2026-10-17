@@ -52,8 +52,9 @@ Searchability: use the exact names and terms someone would later type to find th
 teams, brands, places, acronyms, jargon and buzzwords, spelled as in the material. Prefer the specific name to a
 generic description.
 title: at most 80 characters, specific, keyword-first.
-Tags: 2-4 tags is typical. Reuse EXISTING_TAGS first: an existing tag that largely fits beats a new, more precise
-one. Create a new tag only for a main topic no existing tag covers; zero new tags is normal, 6 is the hard maximum.
+Tags: 2-4 tags, never fewer than 2. For each main topic, reuse an EXISTING_TAGS tag only when it truly names that
+topic; a loosely related tag does not count (a list of YouTube videos to watch is not "productivity"). Otherwise
+create a new broad tag for it. 6 new tags is the hard maximum.
 Tags are lowercase, hyphenated, ASCII, broad reusable topics (for example "cooking", "swift", "personal-finance"),
 never one-off phrases or names, and never starting with "raingist-".
 Recipes: key_takeaways are the full recipe, in order: first "Ingredients: ..." with every ingredient and its amount,

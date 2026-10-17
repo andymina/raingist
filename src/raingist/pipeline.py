@@ -98,8 +98,8 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
         attempts.clear(rid)
         return _fail(s, acct, rd, item, writeback.merge_failure(note, f"gave up after {n} attempts: {e}", today()), dry_run)
     chosen = writeback.choose_tags(summary.tags, existing_tags, s.reserved_tags)
-    log.info("[%s] item %s summarized from %s by %s (confidence %s, lang %s)",
-             acct.id, rid, ex.source, model, summary.confidence, summary.language)
+    log.info("[%s] item %s summarized from %s by %s (confidence %s, lang %s, tags %s)",
+             acct.id, rid, ex.source, model, summary.confidence, summary.language, chosen)
     dest = route(summary, catalog)
     fields = {"note": writeback.merge_note(kept, writeback.build_block(summary, writeback.creator_label(ex.creator, ex.author))),
               "tags": writeback.strip_reserved(writeback.merge_tags(item.get("tags", []), chosen)),
