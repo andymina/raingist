@@ -187,20 +187,6 @@ Bookmarks from other sites are left untouched and untagged, so a future extracto
 
 Your note is sent to the summarizer as the **owner note**. If it asks for something ("list every tool by name"), the summary does it. Otherwise it's used as context for why you saved the bookmark ("Claude skills").
 
-To send only part of your note, mark it with tokens:
-
-```
-private thoughts $start. List every tool by name with one line on what it does. $end. more private thoughts
-```
-
-| Note contains | Sent to the summarizer |
-|---|---|
-| No tokens | The whole note |
-| `$start. … $end.` (one or more pairs) | Only the marked spans |
-| `$start.` only | From the token to the end of the note |
-| `$end.` only | From the start of the note to the token |
-| `$start. $end.` | Nothing |
-
 - The note itself is never changed; the AI block is appended below it and is never sent back.
 - An owner note can't change the tag rules, and it can't make the summary go beyond the source material.
 - To apply a changed note to an already-processed bookmark, add `raingist-redo`.

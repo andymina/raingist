@@ -34,23 +34,9 @@ def merge_tags(item_tags: list[str], add: list[str]) -> list[str]:
             seen.add(t.lower()); out.append(t)
     return out
 
-NOTE_TOKEN = re.compile(r"\$(start|end)\.")
-
 def owner_note(note: str) -> str:
-    """The part of the person's own note sent to the summarizer: the whole note when it has no
-    $start./$end. tokens, else only the spans between them ($start. alone runs to the end,
-    a leading $end. alone starts at the beginning). Never the AI block or failure line."""
-    own = strip_failure_line(strip_ai_block(note or ""))
-    pieces = NOTE_TOKEN.split(own)   # [text, "start"|"end", text, ...]
-    if len(pieces) == 1:
-        return own.strip()
-    out, inside = [], pieces[1] == "end"
-    for i in range(0, len(pieces), 2):
-        if inside and pieces[i].strip():
-            out.append(pieces[i].strip())
-        if i + 1 < len(pieces):
-            inside = pieces[i + 1] == "start"
-    return "\n".join(out)
+    """The person's own note as sent to the summarizer. Never the AI block or failure line."""
+    return strip_failure_line(strip_ai_block(note or "")).strip()
 
 def strip_reserved(tags: list[str]) -> list[str]:
     return [t for t in tags if not t.lower().startswith(RESERVED_PREFIX)]

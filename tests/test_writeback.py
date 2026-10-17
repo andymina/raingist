@@ -56,14 +56,8 @@ def test_is_placeholder_title():
 
 def test_owner_note():
     assert wb.owner_note("") == ""
-    assert wb.owner_note("  just my note \n") == "just my note"   # no tokens: whole note
-    assert wb.owner_note("mine $start. list every tool $end. more") == "list every tool"
-    assert wb.owner_note("$start.one$end.\nx\n$start. two $end.") == "one\ntwo"
-    assert wb.owner_note("intro\n$start. focus on\nthe recipe") == "focus on\nthe recipe"   # $start. alone
-    assert wb.owner_note("send this $end. keep this private") == "send this"   # $end. alone
-    assert wb.owner_note("$start. $end. private") == ""   # explicit empty span sends nothing
-    note = "$start. mine $end.\n\n" + block("$start. not mine $end.")
-    assert wb.owner_note(note) == "mine"   # never the AI block
+    assert wb.owner_note("  just my note \n") == "just my note"
+    assert wb.owner_note("mine\n\n" + block("Sum.")) == "mine"   # never the AI block
     assert wb.owner_note("plain\n\n" + block("Sum.")) == "plain"
     assert wb.owner_note("plain\n\n_raingist-failed: x · 2026-10-01_") == "plain"
 

@@ -180,7 +180,7 @@ def main():
     g.add_argument("--account", type=int); g.add_argument("--dry-run", action="store_true")
     g.add_argument("--force", action="store_true", help="run now even if not due or below ORGANIZE_FIRST_RUN")
     p = sub.add_parser("process"); p.add_argument("--account", type=int, required=True); p.add_argument("--id", type=int, required=True); p.add_argument("--dry-run", action="store_true")
-    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note; $start./$end. limit what is sent")
+    t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note sent to the summarizer")
     sub.add_parser("connect")
     a = sub.add_parser("accounts"); a.add_argument("action", nargs="?", choices=["list", "enable", "disable", "disconnect"], default="list"); a.add_argument("id", nargs="?", type=int)
     sub.add_parser("status")

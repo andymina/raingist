@@ -100,16 +100,17 @@ def test_permanent_failure_stays_in_inbox(settings, tmp_path, monkeypatch):
     assert fields["tags"] == ["Mine", "raingist-ocr", "raingist-failed"]
 
 def test_owner_note_forwarded(settings, tmp_path, ok):
-    note = "keep this $start. list every tool $end."
+    rd = FakeRaindrop([item(note="Claude skills")])
+    assert run(settings, tmp_path, rd) == "done"
+    assert ok == ["Claude skills"]
+    assert rd.updates[0][1]["note"].startswith("Claude skills\n\n**AI summary**")   # note itself untouched
+
+def test_old_tokens_kept_in_note(settings, tmp_path, ok):
+    note = "private\n$start. list every tool $end.\nmore"
     rd = FakeRaindrop([item(note=note)])
     assert run(settings, tmp_path, rd) == "done"
-    assert ok == ["list every tool"]
-    assert rd.updates[0][1]["note"].startswith(note + "\n\n**AI summary**")   # note itself untouched
-
-def test_whole_note_forwarded_without_tokens(settings, tmp_path, ok):
-    rd = FakeRaindrop([item(note="Claude skills")])
-    run(settings, tmp_path, rd)
-    assert ok == ["Claude skills"]
+    assert ok == [note]   # sent whole now
+    assert rd.updates[0][1]["note"].startswith(note + "\n\n**AI summary**")   # owner text byte-for-byte
 
 def test_blocked(settings):
     assert not pipeline.blocked(settings, item())
