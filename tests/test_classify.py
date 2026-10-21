@@ -6,6 +6,7 @@ from raingist.extract.common import classify_ytdlp_error, PermanentFailure, Tran
     ("Unable to extract webpage video data", TransientFailure),
     ("Your IP address is blocked from accessing this post", TransientFailure),
     ("This video is unavailable", PermanentFailure),
+    ("The webpage request was redirected to the login page. You have exceeded the rate-limit for accessing posts anonymously", TransientFailure),
 ])
 def test_classify(msg, kind):
     assert type(classify_ytdlp_error(msg)) is kind

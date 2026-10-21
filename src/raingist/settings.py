@@ -20,6 +20,7 @@ class Settings:
     summary_language: str
     enabled_extractors: tuple[str, ...]
     tiktok_cookies_file: Path | None
+    instagram_cookies_file: Path | None
     transcriber: str
     whisper_model: str
     ocr_backend: str
@@ -112,13 +113,15 @@ def load_settings(env: Mapping | None = None) -> Settings:
             fail(f"unknown LLM provider {p!r}; choose from {sorted(PROVIDERS)}")
         keys[p] = env.get(f"{p.upper()}_API_KEY") or fail(f"{p.upper()}_API_KEY is required for LLM_PROVIDERS={p}")
         models[p] = env.get(f"{p.upper()}_MODEL") or DEFAULT_MODELS[p]
-    extractors = _names(env, "ENABLED_EXTRACTORS", "tiktok")
+    extractors = _names(env, "ENABLED_EXTRACTORS", "tiktok,instagram")
     unknown = [e for e in extractors if e not in EXTRACTORS]
     if unknown or not extractors:
         fail(f"ENABLED_EXTRACTORS has unknown/no entries {unknown}; choose from {sorted(EXTRACTORS)}")
-    cookies = Path(env["TIKTOK_COOKIES_FILE"]).expanduser() if env.get("TIKTOK_COOKIES_FILE") else None
-    if cookies and not cookies.is_file():
-        fail(f"TIKTOK_COOKIES_FILE {cookies} does not exist")
+    cookies = {}
+    for key in ("TIKTOK_COOKIES_FILE", "INSTAGRAM_COOKIES_FILE"):
+        cookies[key] = Path(env[key]).expanduser() if env.get(key) else None
+        if cookies[key] and not cookies[key].is_file():
+            fail(f"{key} {cookies[key]} does not exist")
     tags = {k: (env.get(k) or d).strip().lower() for k, d in (
         ("TAG_FAILED", "raingist-failed"), ("TAG_SKIP", "raingist-skip"),
         ("TAG_OCR", "raingist-ocr"), ("TAG_REDO", "raingist-redo"))}
@@ -136,7 +139,8 @@ def load_settings(env: Mapping | None = None) -> Settings:
         llm_providers=providers, llm_keys=keys, llm_models=models,
         summary_language=env.get("SUMMARY_LANGUAGE") or "en",
         enabled_extractors=extractors,
-        tiktok_cookies_file=cookies,
+        tiktok_cookies_file=cookies["TIKTOK_COOKIES_FILE"],
+        instagram_cookies_file=cookies["INSTAGRAM_COOKIES_FILE"],
         transcriber=_choose(env, "TRANSCRIBER", "mlx-whisper", TRANSCRIBERS),
         whisper_model=env.get("WHISPER_MODEL") or "mlx-community/whisper-large-v3-turbo",
         ocr_backend=_choose(env, "OCR_BACKEND", "vision", OCR_BACKENDS),

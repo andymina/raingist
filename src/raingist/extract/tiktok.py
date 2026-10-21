@@ -5,9 +5,7 @@ from urllib.parse import urlparse
 import httpx
 from .common import Extraction, PermanentFailure, TransientFailure
 from . import ytdl
-from ..subtitles import captions_text
-from ..transcribe import transcribe
-from ..ocr import ocr_video, ocr_images
+from ..ocr import ocr_images
 
 log = logging.getLogger(__name__)
 HOSTS = {"tiktok.com", "vm.tiktok.com", "vt.tiktok.com", "m.tiktok.com"}
@@ -118,29 +116,9 @@ def oembed(url: str) -> dict:
         return {}
 
 def extract_video(s, url: str, workdir: Path, want_ocr: bool) -> Extraction:
-    opts = ytdl.base_opts(workdir, s.tiktok_cookies_file) | {
-        "subtitleslangs": ["all"],
-        "format": "bv*[height<=720]+ba/b[height<=720]/b",
-        "merge_output_format": "mp4",
-    }
-    info = ytdl.run(url, workdir, opts)
-    ex = Extraction(author=info.get("uploader"), creator=info.get("channel"),
-                    description=info.get("description") or oembed(url).get("title"),
-                    duration=info.get("duration"), sound=reused_sound(info))
+    ex, info = ytdl.extract_video(s, url, workdir, want_ocr, s.tiktok_cookies_file)
+    ex.author, ex.creator, ex.sound = info.get("uploader"), info.get("channel"), reused_sound(info)
+    ex.description = ex.description or oembed(url).get("title")
     if ex.sound:
         log.info("reused sound: %s", ex.sound)
-    video = next(iter(sorted(workdir.glob("*.mp4"))), None)
-    if not video:
-        raise TransientFailure("yt-dlp produced no video file")
-    ex.text, ex.language = captions_text(workdir)
-    if ex.text:
-        ex.source = "captions"
-    else:
-        text, lang = transcribe(s, video)
-        if text:
-            ex.text, ex.source, ex.language = text, "whisper", lang
-    if want_ocr:
-        ex.onscreen = ocr_video(s, video, workdir / "frames")
-        if not ex.text and ex.onscreen:
-            ex.source = "ocr"
     return ex

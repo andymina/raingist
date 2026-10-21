@@ -1,9 +1,10 @@
-from . import tiktok
+from . import instagram, tiktok
 
 # name -> (matches(url) -> bool, extract(settings, item, workdir, want_ocr) -> Extraction)
 # New source: module with matches/extract + one entry here + add to ENABLED_EXTRACTORS.
 EXTRACTORS = {
     "tiktok": (tiktok.matches, tiktok.extract),
+    "instagram": (instagram.matches, instagram.extract),
 }
 
 def detect(s, url: str) -> str | None:

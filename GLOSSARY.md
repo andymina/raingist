@@ -52,7 +52,7 @@ _Avoid_: flag, command tag
 ## Content
 
 **Extractor**:
-The pluggable part that turns a Bookmark from one content source (currently TikTok) into an Extraction.
+The pluggable part that turns a Bookmark from one content source (currently TikTok and Instagram Reels) into an Extraction.
 _Avoid_: scraper, downloader, handler
 
 **Extraction**:

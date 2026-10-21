@@ -20,7 +20,7 @@ launchd (KeepAlive) → raingist serve
   every 60 s (POLL_INTERVAL_SECONDS):
     for each enabled account (DATA_DIR/accounts/*.json, OAuth tokens auto-refreshed)
       Raindrop API: bookmarks in the inbox collection, except raingist-failed / raingist-skip
-      → extractor (TikTok: video via yt-dlp, slideshow via the post page's JSON)
+      → extractor (TikTok: video via yt-dlp, slideshow via the post page's JSON; Instagram Reels: video via yt-dlp)
           → captions, else transcriber (mlx-whisper)
           → OCR (Apple Vision, in a child process with a timeout) for slideshows, or videos tagged raingist-ocr
       → LLM (Gemini, optional Anthropic fallback): summary, takeaways, tags, title
@@ -32,7 +32,7 @@ Each pluggable part is a plain `name → implementation` dict selected in `.env`
 
 | Registry | Where | Config | Today |
 |---|---|---|---|
-| `EXTRACTORS` | `extract/__init__.py` | `ENABLED_EXTRACTORS` | `tiktok` |
+| `EXTRACTORS` | `extract/__init__.py` | `ENABLED_EXTRACTORS` | `tiktok`, `instagram` (Reels only) |
 | `TRANSCRIBERS` | `transcribe/__init__.py` | `TRANSCRIBER` | `mlx-whisper` |
 | `OCR_BACKENDS` | `ocr/__init__.py` | `OCR_BACKEND` | `vision` |
 | `PROVIDERS` | `llm/__init__.py` | `LLM_PROVIDERS` (ordered fallback) | `gemini`, `anthropic` |
@@ -59,7 +59,7 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
    - Get a Gemini API key from aistudio.google.com/apikey.
    - In System Settings → Energy, prevent automatic sleep, and keep the user session logged in.
    - Subscribe the ntfy phone app to a long random topic.
-   - Optional: export TikTok cookies while logged in.
+   - Optional: export TikTok and Instagram cookies while logged in.
 2. **Tooling:**
    ```bash
    brew install pyenv uv ffmpeg
@@ -71,7 +71,7 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
    cp .env.example .env
    chmod 600 .env
    ```
-   Fill in `RAINDROP_CLIENT_ID`, `RAINDROP_CLIENT_SECRET`, `GEMINI_API_KEY` and `NOTIFY_URL`. Optional cookies go in `secrets/tiktok-cookies.txt` (`chmod 600`), with `TIKTOK_COOKIES_FILE` set to the file's absolute path.
+   Fill in `RAINDROP_CLIENT_ID`, `RAINDROP_CLIENT_SECRET`, `GEMINI_API_KEY` and `NOTIFY_URL`. Optional cookies go in `secrets/tiktok-cookies.txt` (`chmod 600`), with `TIKTOK_COOKIES_FILE` set to the file's absolute path; likewise `secrets/instagram-cookies.txt` and `INSTAGRAM_COOKIES_FILE`.
 4. **Data volume:**
    ```bash
    mkdir -p /Volumes/T7/raingist/{models,accounts}
@@ -276,6 +276,7 @@ uv lock --upgrade-package yt-dlp && uv sync && uv run raingist restart
 | Alert "N bookmarks in a row failed … Unable to extract" | yt-dlp broke against TikTok | `uv lock --upgrade-package yt-dlp && uv sync && uv run raingist restart` |
 | "IP address is blocked" / 403 | IP flagged by TikTok | Wait a few hours |
 | Login-only TikTok → `raingist-failed` "log in" | No TikTok session | Add `secrets/tiktok-cookies.txt` and set `TIKTOK_COOKIES_FILE` |
+| Reels → retry "rate-limit" / "empty media response" | Instagram blocks anonymous downloads | Add `secrets/instagram-cookies.txt` and set `INSTAGRAM_COOKIES_FILE` |
 | Slideshows → retry "no embedded data" / "no post data" | TikTok page layout changed, or a bot wall | Set cookies; update `parse_post` and `data_url` in `extract/tiktok.py` |
 | Retry "OCR timed out" | Apple Vision hung (it happens intermittently); the OCR process was killed | Nothing: the bookmark retries with backoff |
 | "no LLM provider available … 429" | Gemini free quota hit | Items retry on their own; or add `anthropic` to `LLM_PROVIDERS` with a key |

@@ -24,7 +24,7 @@ PERMANENT_MARKERS = ("private", "unavailable", "not available", "removed", "dele
 
 def classify_ytdlp_error(msg: str) -> Exception:
     m = msg.lower()
-    if "ip" in m and "block" in m:
+    if ("ip" in m and "block" in m) or "rate-limit" in m or "rate limit" in m:   # Instagram's says "login page"
         return TransientFailure(msg[:300])
     if any(k in m for k in PERMANENT_MARKERS):
         return PermanentFailure(msg[:300])
