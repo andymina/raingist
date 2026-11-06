@@ -173,6 +173,7 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
     moves: dict[int, int] = {}
     if catalog and items:
         assignment, model = llm.assign(s, build_message(catalog, items))
+        log.info("[%s] organize assignment from %s: %s", acct.id, model, assignment.model_dump_json())
         moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected)
     leftovers = [i for i in items if i["_id"] not in moves]
     if len(leftovers) < s.organize_min_group:
@@ -262,6 +263,7 @@ def plan_rebalance(s: Settings, catalog: list[dict], placements, merged_away: se
     targets = {c["id"] for c in catalog} - merged_away
     profiles = [c for c in catalog if c["id"] not in merged_away]
     answer, model = llm.rebalance(s, build_message(profiles, items, label="FILED", current=current))
+    log.info("rebalance answer from %s: %s", model, answer.model_dump_json())
     rejected = {rid: placements.filed_into(rid) - {cid} for rid, cid in current.items()}
     titles = {i["_id"]: i.get("title", "") for i in items}
     return [(rid, src, dst, reason, titles[rid]) for rid, src, dst, reason in

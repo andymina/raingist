@@ -41,11 +41,13 @@ class Placements:
         raw = json.loads(path.read_text()) if path.exists() else {}
         self.data: dict[str, list[int]] = raw.get("filed", {})
         self.titles: dict[str, str] = raw.get("titles", {})
+        self.journals_read: str = raw.get("journals_read", "")   # newest Organizing journal already absorbed
 
     def _save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"filed": self.data, "titles": self.titles}, indent=1, ensure_ascii=False))
+        tmp.write_text(json.dumps({"filed": self.data, "titles": self.titles, "journals_read": self.journals_read},
+                                  indent=1, ensure_ascii=False))
         tmp.replace(self.path)
 
     def remember_title(self, rid: int, title: str) -> None:
@@ -67,11 +69,13 @@ class Placements:
         return {int(rid) for rid, cids in self.data.items() if collection in cids}
 
 def load_placements(state_dir: Path) -> Placements:
-    """The account's placements; the first load backfills them from the Organizing journals."""
+    """The account's placements, first absorbing any Organizing journal not read yet (so runs recorded before
+    placements existed, or by an older version, still count). Journals are named by UTC time, so names sort in order."""
     p = Placements(state_dir / "placements.json")
-    if p.path.exists():
+    new = [j for j in sorted((state_dir / "organize").glob("*.json")) if j.name > p.journals_read]
+    if p.path.exists() and not new:
         return p
-    for journal in sorted((state_dir / "organize").glob("*.json")):
+    for journal in new:
         for step in json.loads(journal.read_text()):
             if step["step"] == "moved":
                 p.record(step["item_ids"], step["to"])
@@ -79,6 +83,9 @@ def load_placements(state_dir: Path) -> Placements:
                 p.record(step["item_ids"], step["id"])
             elif step["step"] == "merged":
                 p.record(step["moved"], step["into"])
+            elif step["step"] == "rebalanced" and step["to"] != -1:
+                p.record([step["item_id"]], step["to"])
+        p.journals_read = journal.name
     p._save()
     return p
 

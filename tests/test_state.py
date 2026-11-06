@@ -38,4 +38,5 @@ def test_load_placements_backfills_from_journals(tmp_path):
     p = load_placements(tmp_path)
     assert {i: p.filed_into(i) for i in (1, 3, 4)} == {1: {10}, 3: {30}, 4: {10}}
     (tmp_path / "organize" / "20261027T140007Z.json").write_text(json.dumps([{"step": "moved", "to": 50, "item_ids": [9]}]))
-    assert load_placements(tmp_path).filed_into(9) == set()   # backfill runs once; later moves are recorded live
+    assert load_placements(tmp_path).filed_into(9) == {50}   # a journal written by an older version is absorbed too
+    assert load_placements(tmp_path).journals_read == "20261027T140007Z.json"
