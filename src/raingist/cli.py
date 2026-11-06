@@ -4,7 +4,7 @@ from .settings import load_settings, data_ready
 from .accounts import AccountError, store, connect, access_token
 from .raindrop import Raindrop, authorize_url
 from .oauth_callback import wait_for_code
-from .state import Attempts, RunLock, Busy
+from .state import Attempts, RunLock, Busy, load_placements
 from .organize import run_due
 from .pipeline import run_cycle, process_item, extract, pending_items, collection_catalog, find_inbox
 from .extract import detect
@@ -108,9 +108,10 @@ def cmd_process(s, args):
     rd = Raindrop(access_token(s, acct))
     with RunLock(s.state_dir / "run.lock"):
         state_dir = s.state_dir / str(acct.id); state_dir.mkdir(parents=True, exist_ok=True)
-        collections = rd.collections(); inbox = find_inbox(collections)
+        collections = rd.collections(); inbox = find_inbox(collections); placements = load_placements(state_dir)
         print(process_item(s, acct, rd, Attempts(state_dir / "attempts.json", s.retry_backoff), args.id, rd.tags(),
-                           inbox, collection_catalog(rd, collections, inbox), dry_run=args.dry_run))
+                           inbox, collection_catalog(rd, collections, inbox, placements), dry_run=args.dry_run,
+                           placements=placements))
 
 def cmd_test(s, args):
     """Extract + summarize one URL. No Raindrop access; cache goes to work/test-cache."""

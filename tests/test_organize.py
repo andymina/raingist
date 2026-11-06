@@ -116,12 +116,13 @@ def test_assignment_validation():
                           Move(item_id=101, collection_id=0), Move(item_id=102, collection_id=14),
                           Move(item_id=999, collection_id=10)])
     assert validate_assignment(a, {10, 16}, {100, 101, 102}) == {100: 10}
+    assert validate_assignment(a, {10, 16}, {100, 101, 102}, {100: {10}}) == {100: 16}   # owner moved 100 out of 10
 
 # --- catalog ---
 
 def test_catalog_skips_excluded():
     class RD:
-        def recent_titles(self, cid, n): return []
+        def recent_titles(self, cid, n, skip=()): return []
     assert [c["id"] for c in collection_catalog(RD(), COLLECTIONS, 5)] == [10, 11, 12, 13, 15, 16]
 
 # --- settings ---
@@ -148,7 +149,7 @@ class FakeRD:
         if collection == -1:
             assert sort == "created"; return self.unsorted
         return [{"_id": 900}] if collection == 16 and (max_pages > 1 or self.leftover) else []
-    def recent_titles(self, cid, n): return []
+    def recent_titles(self, cid, n, skip=()): return []
     def create_collection(self, title, description, parent=0):
         self.calls.append(("create", title)); return {"_id": 50}
     def move_many(self, src, ids, to):
@@ -192,6 +193,15 @@ def test_run_order_state_journal_and_alert(run, alerts):
     assert journal[0]["removed"]["title"] == "Travel"
     assert alerts.sent == [(alerts.keys[0], "[user1] organized: 1 new (Birds), 4 moved, merged Travel → Recipes")]
     assert go() is None   # not due again until the next 10:00 ET
+
+def test_owner_corrections_stick_and_moves_are_recorded(run):
+    go, s, _ = run
+    from raingist.state import Placements
+    Placements(s.state_dir / "1" / "placements.json").record([102], 10)   # filed into Recipes once, moved back out
+    go()
+    assert ("move", -1, (103,), 10) in RUNS[0].calls and not any(c[0] == "move" and 102 in c[2] for c in RUNS[0].calls)
+    p = Placements(s.state_dir / "1" / "placements.json")
+    assert p.filed_into(103) == {10} and p.filed_into(100) == {50} and p.filed_into(900) == {10}
 
 def test_few_leftovers_send_no_bookmarks_to_propose(run, monkeypatch):
     go, s, sent = run

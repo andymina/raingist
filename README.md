@@ -138,7 +138,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 | Read on-screen text too | Move it back into `raingist` with `raingist-ocr` and `raingist-redo` |
 | Pick the destination yourself | Ask in its note, e.g. `put this in Recipes` |
 
-- **Where it goes:** the same Gemini call that writes the summary picks a destination. It compares the bookmark with each collection's name, description and 5 most recent bookmark titles (nested collections included, as `Parent / Child`). A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
+- **Where it goes:** the same Gemini call that writes the summary picks a destination. It compares the bookmark with each collection's name, description and 5 most recent bookmark titles (nested collections included, as `Parent / Child`). In your own collections, bookmarks the service filed there don't count toward those 5, so one wrong filing can't pull in more like it; a clear description is the best steer. A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
 - **Moving back in without `raingist-redo`** keeps the existing summary and just re-routes the bookmark.
 - **Failures stay in the inbox**, tagged `raingist-failed` with the reason in the note. So do non-TikToks, untouched. Retries in progress also wait there.
 - Each account's inbox is its one collection named `raingist` (any letter case), found by name every cycle. If an account has none, or more than one, its cycle stops with an `account:<id>` alert saying so.
@@ -158,6 +158,7 @@ It reads each bookmark's title, tags, excerpt and whole note, oldest 200 first (
 |---|---|
 | Keep a collection out of it (and out of routing) | Put `#raingist-exclude` anywhere in its description |
 | Keep a bookmark in Unsorted | Tag it `raingist-skip` |
+| Undo a filing | Move the bookmark back to Unsorted (or anywhere else); raingist never files it into that collection again |
 | Make a raingist-made collection yours | Delete `(created by raingist)` from its description |
 | Preview a run | `uv run raingist organize --dry-run --force` |
 | See what a run did, or rebuild a merged-away collection | `DATA_DIR/state/<account>/organize/<time>.json` |

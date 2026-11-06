@@ -32,6 +32,48 @@ class Attempts:
         if self.data.pop(str(rid), None) is not None:
             self._save()
 
+class Placements:
+    """Collections the service filed each bookmark into (routing and Organizing), {bookmark id: [collection ids]}.
+    A bookmark found outside all of them was moved there by the owner, so they stay off limits for it."""
+    def __init__(self, path: Path):
+        self.path = path
+        self.data: dict[str, list[int]] = json.loads(path.read_text()) if path.exists() else {}
+
+    def _save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.data, indent=1)); tmp.replace(self.path)
+
+    def record(self, ids, collection: int) -> None:
+        for rid in ids:
+            cids = self.data.setdefault(str(rid), [])
+            if collection not in cids:
+                cids.append(collection)
+        self._save()
+
+    def filed_into(self, rid: int) -> set[int]:
+        return set(self.data.get(str(rid), []))
+
+    def placed_by_service(self, collection: int) -> set[int]:
+        """Bookmarks the service filed into `collection` (some may have been moved out since)."""
+        return {int(rid) for rid, cids in self.data.items() if collection in cids}
+
+def load_placements(state_dir: Path) -> Placements:
+    """The account's placements; the first load backfills them from the Organizing journals."""
+    p = Placements(state_dir / "placements.json")
+    if p.path.exists():
+        return p
+    for journal in sorted((state_dir / "organize").glob("*.json")):
+        for step in json.loads(journal.read_text()):
+            if step["step"] == "moved":
+                p.record(step["item_ids"], step["to"])
+            elif step["step"] == "created" and step.get("id"):
+                p.record(step["item_ids"], step["id"])
+            elif step["step"] == "merged":
+                p.record(step["moved"], step["into"])
+    p._save()
+    return p
+
 class RunLock:
     def __init__(self, path: Path):
         self.f = open(path, "w")

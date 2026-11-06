@@ -141,9 +141,31 @@ def test_find_inbox_missing_or_ambiguous(titles):
 
 def test_collection_catalog_paths_and_skips_inbox():
     class RD:
-        def recent_titles(self, cid, n): return [f"t{cid}"]
+        def recent_titles(self, cid, n, skip=()): return [f"t{cid}"]
     cols = [{"_id": INBOX, "title": "raingist"}, {"_id": 1, "title": "Food", "description": "eats"},
             {"_id": 2, "title": "Recipes", "parent": {"$id": 1}}]
     assert pipeline.collection_catalog(RD(), cols, INBOX) == [
         {"id": 1, "title": "Food", "description": "eats", "samples": ["t1"]},
         {"id": 2, "title": "Food / Recipes", "description": "", "samples": ["t2"]}]
+
+def test_catalog_samples_skip_service_filings_in_owner_collections(tmp_path):
+    from raingist.state import Placements
+    seen = {}
+    class RD:
+        def recent_titles(self, cid, n, skip=()):
+            seen[cid] = set(skip); return []
+    p = Placements(tmp_path / "p.json")
+    p.record([100, 101], 1); p.record([102], 2)
+    cols = [{"_id": 1, "title": "music inspiration"},
+            {"_id": 2, "title": "Tools", "description": f"Dev tools. {pipeline.PROVENANCE}"}]
+    pipeline.collection_catalog(RD(), cols, INBOX, p)
+    assert seen == {1: {100, 101}, 2: set()}   # the service's own collection keeps its samples
+
+@pytest.mark.parametrize("chosen,dry_run,recorded", [(77, False, {77}), (0, False, set()), (77, True, set())])
+def test_routing_records_placement(settings, tmp_path, ok, chosen, dry_run, recorded):
+    from raingist.state import Placements
+    ROUTE_TO[0] = chosen
+    p = Placements(tmp_path / "p.json")
+    pipeline.process_item(settings, acct(), FakeRaindrop([item()]), Attempts(tmp_path / "a.json", settings.retry_backoff),
+                          10, [], INBOX, CATALOG, dry_run=dry_run, placements=p)
+    assert p.filed_into(10) == recorded

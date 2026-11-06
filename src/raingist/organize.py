@@ -5,6 +5,7 @@ from .settings import Settings
 from .accounts import Account, AccountError, store, access_token
 from .raindrop import Raindrop
 from .notify import Alerts
+from .state import load_placements
 from . import llm
 from .llm.prompt import Proposal, Assignment
 from .pipeline import UNSORTED, PROVENANCE, collection_catalog, find_inbox
@@ -88,10 +89,14 @@ def validate_proposal(p: Proposal, catalog: list[dict], collections: list[dict],
         existing[key] = None; placed |= set(ids)
     return creates, moves, merges
 
-def validate_assignment(a: Assignment, targets: set[int], remaining: set[int]) -> dict[int, int]:
+def validate_assignment(a: Assignment, targets: set[int], remaining: set[int],
+                        rejected: dict[int, set[int]] | None = None) -> dict[int, int]:
+    """Valid moves only. `rejected` = collections each bookmark was filed into before and the owner moved it out of."""
+    rejected = rejected or {}
     moves: dict[int, int] = {}
     for m in a.moves:
-        if m.item_id in remaining and m.item_id not in moves and m.collection_id in targets:
+        if m.item_id in remaining and m.item_id not in moves and m.collection_id in targets \
+                and m.collection_id not in rejected.get(m.item_id, set()):
             moves[m.item_id] = m.collection_id
     return moves
 
@@ -135,21 +140,25 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
         return None
     items = items[: s.organize_max_items]
     raw = {c["_id"]: c for c in collections}
-    catalog = collection_catalog(rd, collections, inbox)
+    placements = load_placements(state_dir)
+    rejected = {i["_id"]: placements.filed_into(i["_id"]) for i in items}   # in Unsorted now: the owner moved it out
+    catalog = collection_catalog(rd, collections, inbox, placements)
     journal = Journal(state_dir / "organize" / f"{now:%Y%m%dT%H%M%SZ}.json", dry_run)
 
     def move(from_collection: int, ids: list[int], to: int) -> None:
         if dry_run:
             log.info("[%s] DRY-RUN PUT /raindrops/%s move %d to %s: %s", acct.id, from_collection, len(ids), to, ids)
-        elif rd.move_many(from_collection, ids, to) != len(ids):
-            log.warning("[%s] move of %d bookmarks to %s reported a different count", acct.id, len(ids), to)
+        else:
+            if rd.move_many(from_collection, ids, to) != len(ids):
+                log.warning("[%s] move of %d bookmarks to %s reported a different count", acct.id, len(ids), to)
+            placements.record(ids, to)
 
     # 1. assign first, so propose only sees what no existing collection takes (each bookmark reaches the LLM once,
     #    plus again only if it is left over)
     moves: dict[int, int] = {}
     if catalog and items:
         assignment, model = llm.assign(s, build_message(catalog, raw, items))
-        moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items})
+        moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected)
     leftovers = [i for i in items if i["_id"] not in moves]
     if len(leftovers) < s.organize_min_group:
         leftovers = []   # too few to form a new collection; propose then only looks at merges
@@ -161,6 +170,7 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
                                                      s.organize_min_group)
     survivor = dict(merges)
     moves = {i: survivor.get(c, c) for i, c in moves.items()} | clash_moves   # filed into a merged-away one: follow it
+    moves = {i: c for i, c in moves.items() if c not in rejected.get(i, set())}
     created, moved, merged = [], 0, []
 
     for src, dst in merges:

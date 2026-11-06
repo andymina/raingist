@@ -7,7 +7,7 @@ from .extract.common import Extraction, PermanentFailure, TransientFailure
 from .extract import ytdl
 from . import cache, writeback
 from .llm import summarize
-from .state import Attempts
+from .state import Attempts, Placements, load_placements
 from .notify import Alerts
 
 log = logging.getLogger(__name__)
@@ -58,21 +58,28 @@ def pending_items(s: Settings, rd: Raindrop, inbox: int) -> list[dict]:
 def excluded(c: dict) -> bool:
     return EXCLUDE_MARK in (c.get("description") or "").lower()
 
-def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int) -> list[dict]:
-    """Routing candidates: every collection except the inbox and excluded ones, with path, description and recent titles."""
+def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int,
+                       placements: Placements | None = None) -> list[dict]:
+    """Routing candidates: every collection except the inbox and excluded ones, with path, description and recent titles.
+    An owner's collection is sampled only from bookmarks the service did not file there, so a wrong filing never
+    becomes part of how the collection is described (it would pull in more of the same)."""
     cols = [c for c in collections if c["_id"] != inbox and not excluded(c)]
     by_id = {c["_id"]: c for c in cols}
     def path(c):
         parent = by_id.get((c.get("parent") or {}).get("$id"))
         return f"{path(parent)} / {c['title']}" if parent else c["title"]
+    def skip(c):
+        if placements is None or PROVENANCE in (c.get("description") or ""):
+            return set()   # the service filed everything in its own collections; their description anchors them
+        return placements.placed_by_service(c["_id"])
     return [{"id": c["_id"], "title": path(c), "description": c.get("description") or "",
-             "samples": rd.recent_titles(c["_id"], SAMPLE_TITLES)} for c in cols[:MAX_COLLECTIONS]]
+             "samples": rd.recent_titles(c["_id"], SAMPLE_TITLES, skip=skip(c))} for c in cols[:MAX_COLLECTIONS]]
 
 def route(summary, catalog: list[dict]) -> int:
     return summary.collection_id if summary.collection_id in {c["id"] for c in catalog} else UNSORTED
 
 def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, rid: int, existing_tags: list[str],
-                 inbox: int, catalog: list[dict], dry_run: bool = False) -> str:
+                 inbox: int, catalog: list[dict], dry_run: bool = False, placements: Placements | None = None) -> str:
     """Returns one of: done, failed, retry, noop. Done = enriched and routed out of the inbox in one PUT."""
     item = rd.get(rid)   # fresh, right before writing
     tags = {t.lower() for t in item.get("tags", [])}
@@ -109,6 +116,8 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
     log.info("[%s] item %s -> collection %s", acct.id, rid, next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"))
     attempts.clear(rid)
     _put(acct, rd, item, dry_run, fields)
+    if placements is not None and dest != UNSORTED and not dry_run:
+        placements.record([rid], dest)
     return "done"
 
 def _fail(s: Settings, acct: Account, rd: Raindrop, item: dict, note: str, dry_run: bool) -> str:
@@ -133,13 +142,15 @@ def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool 
     pending = [i for i in pending_items(s, rd, inbox) if attempts.due(i["_id"])]
     pending = pending[: limit or s.max_items_per_account]
     existing_tags = rd.tags() if pending else []
-    catalog = collection_catalog(rd, collections, inbox) if pending else []
+    placements = load_placements(state_dir)
+    catalog = collection_catalog(rd, collections, inbox, placements) if pending else []
     counts: dict[str, int] = {}
     streak, last_error = 0, ""
     for item in pending:
         rid = item["_id"]
         try:
-            r = process_item(s, acct, rd, attempts, rid, existing_tags, inbox, catalog, dry_run=dry_run)
+            r = process_item(s, acct, rd, attempts, rid, existing_tags, inbox, catalog, dry_run=dry_run,
+                             placements=placements)
         except Exception as e:   # one bad item must not stop the rest; logged with traceback, alerted via streak
             log.exception("[%s] item %s crashed: %s", acct.id, rid, e)
             r, last_error = "crash", str(e)
