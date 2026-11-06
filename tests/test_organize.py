@@ -48,7 +48,7 @@ COLLECTIONS = [
     {"_id": 15, "title": "Shared", "count": 1, "collaborators": {"$id": 1}},
     {"_id": 16, "title": "Travel", "count": 9},
 ]
-CATALOG = [{"id": c["_id"], "title": c["title"], "description": c.get("description", ""), "samples": []}
+CATALOG = [{"id": c["_id"], "title": c["title"], "description": c.get("description", ""), "examples": []}
            for c in COLLECTIONS if c["_id"] not in (5, 14)]
 UNSORTED_IDS = set(range(100, 120))
 
@@ -112,17 +112,33 @@ def test_merge_rules():
 # --- assignment ---
 
 def test_assignment_validation():
-    a = Assignment(moves=[Move(item_id=100, collection_id=10), Move(item_id=100, collection_id=16),
-                          Move(item_id=101, collection_id=0), Move(item_id=102, collection_id=14),
-                          Move(item_id=999, collection_id=10)])
+    a = Assignment(moves=[Move(item_id=100, collection_id=10, confidence="high"), Move(item_id=100, collection_id=16, confidence="high"),
+                          Move(item_id=101, collection_id=0, confidence="high"), Move(item_id=102, collection_id=14, confidence="high"),
+                          Move(item_id=999, collection_id=10, confidence="high")])
     assert validate_assignment(a, {10, 16}, {100, 101, 102}) == {100: 10}
     assert validate_assignment(a, {10, 16}, {100, 101, 102}, {100: {10}}) == {100: 16}   # owner moved 100 out of 10
+    unsure = Assignment(moves=[Move(item_id=100, collection_id=10, confidence="medium")])
+    assert validate_assignment(unsure, {10, 16}, {100}) == {}
+
+def test_rebalance_validation():
+    a = Assignment(moves=[Move(item_id=1, collection_id=16, confidence="high", reason=" travel guide "),   # move
+                          Move(item_id=2, collection_id=10, confidence="high"),     # already there
+                          Move(item_id=3, collection_id=0, confidence="high"),      # fits nothing: Unsorted
+                          Move(item_id=4, collection_id=16, confidence="medium"),   # not sure enough
+                          Move(item_id=5, collection_id=14, confidence="high"),     # not a target
+                          Move(item_id=6, collection_id=12, confidence="high"),     # owner pulled it out of 12
+                          Move(item_id=99, collection_id=16, confidence="high"),    # not a candidate
+                          Move(item_id=1, collection_id=12, confidence="high")])    # second answer for 1
+    current = {i: 10 for i in range(1, 7)}
+    assert organize.validate_rebalance(a, {10, 12, 16}, current, {6: {12}}, limit=10) == [
+        (1, 10, 16, "travel guide"), (3, 10, organize.UNSORTED, "")]
+    assert len(organize.validate_rebalance(a, {10, 12, 16}, current, {}, limit=1)) == 1
 
 # --- catalog ---
 
 def test_catalog_skips_excluded():
     class RD:
-        def recent_titles(self, cid, n, skip=()): return []
+        def search(self, query, max_pages=10, collection=0): return []
     assert [c["id"] for c in collection_catalog(RD(), COLLECTIONS, 5)] == [10, 11, 12, 13, 15, 16]
 
 # --- settings ---
@@ -130,6 +146,11 @@ def test_catalog_skips_excluded():
 def test_settings(env):
     s = load_settings(env)
     assert (s.organize_enabled, s.organize_first_run, s.organize_min_group, s.organize_max_items) == (True, 30, 5, 200)
+    assert (s.organize_rebalance, s.organize_rebalance_max) == ("suggest", 10)
+    assert s.llm_decision_models == s.llm_models
+    assert load_settings({**env, "GEMINI_DECISION_MODEL": "gemini-3.5-flash"}).llm_decision_models["gemini"] == "gemini-3.5-flash"
+    with pytest.raises(SystemExit, match="ORGANIZE_REBALANCE"):
+        load_settings({**env, "ORGANIZE_REBALANCE": "yes"})
     assert not load_settings({**env, "ORGANIZE_ENABLED": "0"}).organize_enabled
     with pytest.raises(SystemExit, match="ORGANIZE_ENABLED"):
         load_settings({**env, "ORGANIZE_ENABLED": "yes please"})
@@ -149,7 +170,7 @@ class FakeRD:
         if collection == -1:
             assert sort == "created"; return self.unsorted
         return [{"_id": 900}] if collection == 16 and (max_pages > 1 or self.leftover) else []
-    def recent_titles(self, cid, n, skip=()): return []
+    def get(self, rid): return {"_id": rid, "title": f"t{rid}"}
     def create_collection(self, title, description, parent=0):
         self.calls.append(("create", title)); return {"_id": 50}
     def move_many(self, src, ids, to):
@@ -171,15 +192,16 @@ def run(settings, make_account, alerts, monkeypatch):
         return Proposal(new_collections=[nc("Birds", [100, 101])], merges=[Merge(from_id=10, into_id=16)]), "m"
     def assign(s, msg):
         sent["assign"] = msg
-        return Assignment(moves=[Move(item_id=102, collection_id=10), Move(item_id=103, collection_id=16),
-                                 Move(item_id=104, collection_id=999)]), "m"
+        return Assignment(moves=[Move(item_id=102, collection_id=10, confidence="high"), Move(item_id=103, collection_id=16, confidence="high"),
+                                 Move(item_id=104, collection_id=999, confidence="high")]), "m"
     monkeypatch.setattr(organize.llm, "propose", propose)
     monkeypatch.setattr(organize.llm, "assign", assign)
+    monkeypatch.setattr(organize.llm, "rebalance", lambda s, msg: pytest.fail("nothing to rebalance"))
     return lambda **kw: organize.run_account(s, acct, alerts, **kw), s, sent
 
 def test_run_order_state_journal_and_alert(run, alerts):
     go, s, sent = run
-    assert go() == {"created": 1, "moved": 4, "merged": 1}
+    assert go() == {"created": 1, "moved": 4, "merged": 1, "rebalanced": 0, "suggested": 0}
     assert RUNS[0].calls == [("move", 16, (900,), 10), ("delete", 16),   # flipped: Recipes (40) outlives Travel (9)
                              ("move", -1, (102, 103), 10),                # 103 was filed into Travel: follows the merge
                              ("create", "Birds"), ("move", -1, (100, 101), 50)]
@@ -187,7 +209,7 @@ def test_run_order_state_journal_and_alert(run, alerts):
     unsorted_part = sent["propose"].split("UNSORTED")[1]
     assert "100:" in unsorted_part and "102:" not in unsorted_part         # propose sees only the leftovers
     state = json.loads((s.state_dir / "1" / "organize.json").read_text())
-    assert state["last_counts"] == {"created": 1, "moved": 4, "merged": 1}
+    assert state["last_counts"] == {"created": 1, "moved": 4, "merged": 1, "rebalanced": 0, "suggested": 0}
     journal = json.loads(next((s.state_dir / "1" / "organize").iterdir()).read_text())
     assert [j["step"] for j in journal] == ["merged", "moved", "created"]
     assert journal[0]["removed"]["title"] == "Travel"
@@ -195,18 +217,61 @@ def test_run_order_state_journal_and_alert(run, alerts):
     assert go() is None   # not due again until the next 10:00 ET
 
 def test_owner_corrections_stick_and_moves_are_recorded(run):
-    go, s, _ = run
+    go, s, sent = run
     from raingist.state import Placements
     Placements(s.state_dir / "1" / "placements.json").record([102], 10)   # filed into Recipes once, moved back out
     go()
+    assert "  not here: t102" in sent["assign"]   # the correction teaches the next decision
     assert ("move", -1, (103,), 10) in RUNS[0].calls and not any(c[0] == "move" and 102 in c[2] for c in RUNS[0].calls)
     p = Placements(s.state_dir / "1" / "placements.json")
     assert p.filed_into(103) == {10} and p.filed_into(100) == {50} and p.filed_into(900) == {10}
 
+@pytest.mark.parametrize("mode", ["suggest", "move"])
+def test_rebalance_moves_or_suggests_service_filings_only(run, alerts, monkeypatch, mode):
+    go, s, sent = run
+    from raingist.state import Placements
+    Placements(s.state_dir / "1" / "placements.json").record([900], 16)   # the service filed 900 into Travel
+    monkeypatch.setattr(organize.llm, "propose", lambda s, msg: (Proposal(), "m"))   # no merge: Travel stays
+    monkeypatch.setattr(organize.llm, "assign", lambda s, msg: (Assignment(), "m"))
+    def rebalance(s, msg):
+        sent["rebalance"] = msg
+        return Assignment(moves=[Move(item_id=900, collection_id=12, confidence="high", reason="gadget review")]), "m"
+    monkeypatch.setattr(organize.llm, "rebalance", rebalance)
+    counts = organize.run_account(dataclasses.replace(s, organize_rebalance=mode), organize.store(s).load(s, 1), alerts)
+    assert "FILED (id: collection | title" in sent["rebalance"] and "900: in 16 | " in sent["rebalance"]
+    moved = ("move", 16, (900,), 12) in RUNS[0].calls
+    journal = json.loads(next((s.state_dir / "1" / "organize").iterdir()).read_text())
+    if mode == "move":
+        assert moved and counts["rebalanced"] == 1 and journal[-1]["step"] == "rebalanced"
+        assert Placements(s.state_dir / "1" / "placements.json").filed_into(900) == {16, 12}
+        assert "rebalanced 900: Travel → Tech" in alerts.sent[0][1]
+    else:
+        assert not moved and counts["suggested"] == 1 and journal[-1]["reason"] == "gadget review"
+        assert "suggests moving 900: Travel → Tech" in alerts.sent[0][1]
+
+def test_rebalance_off_makes_no_call(run, alerts):
+    go, s, _ = run
+    from raingist.state import Placements
+    Placements(s.state_dir / "1" / "placements.json").record([900], 16)
+    organize.run_account(dataclasses.replace(s, organize_rebalance="off"), organize.store(s).load(s, 1), alerts)
+
+def test_draft_descriptions_only_for_owner_collections_without_one(settings, monkeypatch):
+    from raingist.llm.prompt import Descriptions, Description
+    seen = {}
+    def describe(s, msg):
+        seen["msg"] = msg
+        return Descriptions(items=[Description(collection_id=12, description=" Phones,  laptops; not apps ")]), "m"
+    monkeypatch.setattr(organize.llm, "describe", describe)
+    catalog = [{"id": 10, "title": "Recipes", "description": "Food I cook.", "made_by": "owner", "examples": []},
+               {"id": 11, "title": "Cooking", "description": "", "made_by": "raingist", "examples": []},
+               {"id": 12, "title": "Tech", "description": "", "made_by": "owner", "examples": []}]
+    assert organize.draft_descriptions(settings, catalog) == [("Tech", "Phones, laptops; not apps")]
+    assert seen["msg"].endswith("DESCRIBE: 12")
+
 def test_few_leftovers_send_no_bookmarks_to_propose(run, monkeypatch):
     go, s, sent = run
     monkeypatch.setattr(organize.llm, "assign", lambda s, msg: (Assignment(moves=[
-        Move(item_id=i, collection_id=10) for i in (100, 101, 102, 103, 104)]), "m"))   # only 105 left over
+        Move(item_id=i, collection_id=10, confidence="high") for i in (100, 101, 102, 103, 104)]), "m"))   # only 105 left over
     go()
     assert sent["propose"].endswith("UNSORTED (id: title | tags | excerpt | note):\n(none)")
 

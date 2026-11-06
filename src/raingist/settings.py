@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]   # ~/raingist
 SENTINEL = ".raingist"
+REBALANCE_MODES = {"off": "no rebalancing", "suggest": "alert with suggested moves", "move": "move, capped per run"}
 
 @dataclass(frozen=True)
 class Settings:
@@ -17,6 +18,7 @@ class Settings:
     llm_providers: tuple[str, ...]
     llm_keys: dict
     llm_models: dict
+    llm_decision_models: dict   # Organizing calls (assign, propose, rebalance, describe)
     summary_language: str
     enabled_extractors: tuple[str, ...]
     tiktok_cookies_file: Path | None
@@ -36,6 +38,8 @@ class Settings:
     organize_first_run: int
     organize_min_group: int
     organize_max_items: int
+    organize_rebalance: str      # off | suggest | move
+    organize_rebalance_max: int
 
     @property
     def state_tags(self) -> frozenset[str]:
@@ -107,12 +111,13 @@ def load_settings(env: Mapping | None = None) -> Settings:
         if not env.get(key):
             fail(f"{key} is required")
     providers = _names(env, "LLM_PROVIDERS", "gemini")
-    keys, models = {}, {}
+    keys, models, decision_models = {}, {}, {}
     for p in providers:
         if p not in PROVIDERS:
             fail(f"unknown LLM provider {p!r}; choose from {sorted(PROVIDERS)}")
         keys[p] = env.get(f"{p.upper()}_API_KEY") or fail(f"{p.upper()}_API_KEY is required for LLM_PROVIDERS={p}")
         models[p] = env.get(f"{p.upper()}_MODEL") or DEFAULT_MODELS[p]
+        decision_models[p] = env.get(f"{p.upper()}_DECISION_MODEL") or models[p]
     extractors = _names(env, "ENABLED_EXTRACTORS", "tiktok,instagram")
     unknown = [e for e in extractors if e not in EXTRACTORS]
     if unknown or not extractors:
@@ -136,7 +141,7 @@ def load_settings(env: Mapping | None = None) -> Settings:
         raindrop_client_secret=env["RAINDROP_CLIENT_SECRET"],
         raindrop_redirect_uri=env.get("RAINDROP_REDIRECT_URI") or "http://localhost:8765/callback",
         account_store=_choose(env, "ACCOUNT_STORE", "files", ACCOUNT_STORES),
-        llm_providers=providers, llm_keys=keys, llm_models=models,
+        llm_providers=providers, llm_keys=keys, llm_models=models, llm_decision_models=decision_models,
         summary_language=env.get("SUMMARY_LANGUAGE") or "en",
         enabled_extractors=extractors,
         tiktok_cookies_file=cookies["TIKTOK_COOKIES_FILE"],
@@ -154,6 +159,8 @@ def load_settings(env: Mapping | None = None) -> Settings:
         organize_first_run=_positive(env, "ORGANIZE_FIRST_RUN", 30),
         organize_min_group=_positive(env, "ORGANIZE_MIN_GROUP", 5),
         organize_max_items=_positive(env, "ORGANIZE_MAX_ITEMS", 200),
+        organize_rebalance=_choose(env, "ORGANIZE_REBALANCE", "suggest", REBALANCE_MODES),
+        organize_rebalance_max=_positive(env, "ORGANIZE_REBALANCE_MAX", 10),
     )
 
 def data_ready(s: Settings) -> bool:

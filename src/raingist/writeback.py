@@ -82,6 +82,14 @@ def strip_ai_block(note: str) -> str:
         out.append(line)
     return "\n".join(out).rstrip()
 
+def summary_line(note: str | None) -> str:
+    """The one summary line of our block, or "" when the note has none."""
+    lines = (note or "").splitlines()
+    for i, line in enumerate(lines[:-1]):
+        if line.strip() == MARKER:
+            return lines[i + 1].strip()
+    return ""
+
 def _one_line(text: str) -> str:
     return " ".join(text.split())   # strip_ai_block relies on one line per summary/takeaway
 

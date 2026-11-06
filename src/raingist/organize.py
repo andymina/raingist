@@ -7,7 +7,7 @@ from .raindrop import Raindrop
 from .notify import Alerts
 from .state import load_placements
 from . import llm
-from .llm.prompt import Proposal, Assignment
+from .llm.prompt import Proposal, Assignment, catalog_lines
 from .pipeline import UNSORTED, PROVENANCE, collection_catalog, find_inbox
 
 log = logging.getLogger(__name__)
@@ -41,14 +41,14 @@ def unsorted_items(s: Settings, rd: Raindrop) -> list[dict]:
 def flat(text: str | None, n: int) -> str:
     return " ".join((text or "").split())[:n]
 
-def build_message(catalog: list[dict], raw: dict, items: list[dict]) -> str:
-    cols = [f"{c['id']}: {c['title']} | {c['description']} | {raw.get(c['id'], {}).get('count', 0)} bookmarks"
-            f" | {'raingist' if made_by_raingist(c) else 'owner'} | {'; '.join(t for t in c['samples'] if t)}"
-            for c in catalog]
-    entries = [f"{i['_id']}: {i.get('title', '')} | tags: {', '.join(i.get('tags', []))}"
+def build_message(catalog: list[dict], items: list[dict], label: str = "UNSORTED",
+                  current: dict[int, int] | None = None) -> str:
+    """Collection profiles, then the bookmarks to decide on; `current` adds each one's collection (rebalancing)."""
+    where = lambda i: f"in {current[i['_id']]} | " if current else ""
+    entries = [f"{i['_id']}: {where(i)}{i.get('title', '')} | tags: {', '.join(i.get('tags', []))}"
                f" | {flat(i.get('excerpt'), EXCERPT_CHARS)} | note: {flat(i.get('note'), NOTE_CHARS)}" for i in items]
-    return "\n".join(["COLLECTIONS (id: path | description | size | made by | recent bookmarks):", *(cols or ["(none)"]),
-                      "UNSORTED (id: title | tags | excerpt | note):", *(entries or ["(none)"])])
+    header = f"{label} (id: {'collection | ' if current else ''}title | tags | excerpt | note):"
+    return "\n".join([*catalog_lines(catalog), header, *(entries or ["(none)"])])
 
 def validate_proposal(p: Proposal, catalog: list[dict], collections: list[dict], unsorted_ids: set[int],
                       min_group: int) -> tuple[list[dict], dict[int, int], list[tuple[int, int]]]:
@@ -96,9 +96,23 @@ def validate_assignment(a: Assignment, targets: set[int], remaining: set[int],
     moves: dict[int, int] = {}
     for m in a.moves:
         if m.item_id in remaining and m.item_id not in moves and m.collection_id in targets \
-                and m.collection_id not in rejected.get(m.item_id, set()):
+                and m.confidence == "high" and m.collection_id not in rejected.get(m.item_id, set()):
             moves[m.item_id] = m.collection_id
     return moves
+
+def validate_rebalance(a: Assignment, targets: set[int], current: dict[int, int], rejected: dict[int, set[int]],
+                       limit: int) -> list[tuple[int, int, int, str]]:
+    """(item, from, to, reason) for confident moves to a different valid collection, or to Unsorted (0); at most
+    `limit`, in the model's order. A collection the owner moved the bookmark out of is never a destination."""
+    out, seen = [], set()
+    for m in a.moves:
+        src = current.get(m.item_id)
+        dst = UNSORTED if m.collection_id == 0 else m.collection_id
+        if src is None or m.item_id in seen or m.confidence != "high" or dst == src \
+                or (dst != UNSORTED and dst not in targets) or dst in rejected.get(m.item_id, set()):
+            continue
+        out.append((m.item_id, src, dst, m.reason.strip())); seen.add(m.item_id)
+    return out[:limit]
 
 class Journal:
     """Every applied step, rewritten after each one so a partial run is recorded too."""
@@ -151,20 +165,21 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
         else:
             if rd.move_many(from_collection, ids, to) != len(ids):
                 log.warning("[%s] move of %d bookmarks to %s reported a different count", acct.id, len(ids), to)
-            placements.record(ids, to)
+            if to != UNSORTED:
+                placements.record(ids, to)
 
     # 1. assign first, so propose only sees what no existing collection takes (each bookmark reaches the LLM once,
     #    plus again only if it is left over)
     moves: dict[int, int] = {}
     if catalog and items:
-        assignment, model = llm.assign(s, build_message(catalog, raw, items))
+        assignment, model = llm.assign(s, build_message(catalog, items))
         moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected)
     leftovers = [i for i in items if i["_id"] not in moves]
     if len(leftovers) < s.organize_min_group:
         leftovers = []   # too few to form a new collection; propose then only looks at merges
     proposal = Proposal()
     if leftovers or len(catalog) > 1:
-        proposal, model = llm.propose(s, build_message(catalog, raw, leftovers))
+        proposal, model = llm.propose(s, build_message(catalog, leftovers))
         log.info("[%s] organize proposal from %s: %s", acct.id, model, proposal.model_dump_json())
     creates, clash_moves, merges = validate_proposal(proposal, catalog, collections, {i["_id"] for i in leftovers},
                                                      s.organize_min_group)
@@ -200,14 +215,73 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
         move(UNSORTED, n["item_ids"], cid)
         created.append(n["title"]); moved += len(n["item_ids"])
 
-    counts = {"created": len(created), "moved": moved, "merged": len(merged)}
+    # 3. rebalance: re-check bookmarks the service filed earlier against the profiles (ADR 0010)
+    names = {c["id"]: c["title"] for c in catalog} | {UNSORTED: "Unsorted"}
+    rebalance = [] if s.organize_rebalance == "off" else plan_rebalance(s, catalog, placements, set(survivor))
+    lines = [f"{title or rid}: {names[src]} → {names[dst]}" for rid, src, dst, _, title in rebalance]
+    if s.organize_rebalance == "move":
+        for (src, dst), group in _by_route(rebalance).items():
+            move(src, [r[0] for r in group], dst)
+        for rid, src, dst, reason, title in rebalance:
+            journal.add("rebalanced", item_id=rid, title=title, **{"from": src}, to=dst, reason=reason)
+    else:
+        for rid, src, dst, reason, title in rebalance:
+            journal.add("suggested", item_id=rid, title=title, **{"from": src}, to=dst, reason=reason)
+    for line in lines:
+        log.info("[%s] %s %s", acct.id, "rebalanced" if s.organize_rebalance == "move" else "suggest moving", line)
+
+    rebalanced = len(rebalance) if s.organize_rebalance == "move" else 0
+    suggested = len(rebalance) - rebalanced
+    counts = {"created": len(created), "moved": moved, "merged": len(merged), "rebalanced": rebalanced,
+              "suggested": suggested}
     log.info("[%s] organize complete: %s", acct.id, counts)
     save(last_run_at=now.isoformat(), last_counts=counts)
-    if (created or moved or merged) and not dry_run:
+    if (created or moved or merged or rebalance) and not dry_run:
         parts = [f"{len(created)} new ({', '.join(created)})" if created else "", f"{moved} moved" if moved else "",
-                 f"merged {', '.join(merged)}" if merged else ""]
+                 f"merged {', '.join(merged)}" if merged else "",
+                 f"rebalanced {'; '.join(lines)}" if rebalanced else "",
+                 f"suggests moving {'; '.join(lines)}" if suggested else ""]
         alerts.send(f"organized:{acct.id}:{now:%Y%m%d%H%M}", f"[{acct.name}] organized: {', '.join(p for p in parts if p)}")
     return counts
+
+def plan_rebalance(s: Settings, catalog: list[dict], placements, merged_away: set[int]) -> list[tuple]:
+    """(item, from, to, reason, title) for bookmarks the service filed into a collection they no longer clearly fit.
+    Only the service's own filings are candidates: a bookmark the owner placed, or tagged raingist-skip, never moves."""
+    current, items = {}, []
+    for c in catalog:
+        if c["id"] in merged_away:
+            continue
+        placed = placements.placed_by_service(c["id"])
+        for m in c["members"]:
+            skip = s.tag_skip in {t.lower() for t in m.get("tags", [])}
+            if m["_id"] in placed and m["_id"] not in current and not skip:
+                current[m["_id"]] = c["id"]; items.append(m)
+    items = items[: s.organize_max_items]
+    if not items:
+        return []
+    targets = {c["id"] for c in catalog} - merged_away
+    profiles = [c for c in catalog if c["id"] not in merged_away]
+    answer, model = llm.rebalance(s, build_message(profiles, items, label="FILED", current=current))
+    rejected = {rid: placements.filed_into(rid) - {cid} for rid, cid in current.items()}
+    titles = {i["_id"]: i.get("title", "") for i in items}
+    return [(rid, src, dst, reason, titles[rid]) for rid, src, dst, reason in
+            validate_rebalance(answer, targets, current, rejected, s.organize_rebalance_max)]
+
+def draft_descriptions(s: Settings, catalog: list[dict]) -> list[tuple[str, str]]:
+    """(collection path, drafted scope) for each owner collection without a description. Never written to Raindrop:
+    the owner's collection metadata is theirs to edit."""
+    todo = [c for c in catalog if c["made_by"] == "owner" and not c["description"].strip()]
+    if not todo:
+        return []
+    answer, _ = llm.describe(s, "\n".join([*catalog_lines(catalog), "DESCRIBE: " + ", ".join(str(c["id"]) for c in todo)]))
+    drafts = {d.collection_id: " ".join(d.description.split()) for d in answer.items}
+    return [(c["title"], drafts[c["id"]]) for c in todo if drafts.get(c["id"])]
+
+def _by_route(plan: list[tuple]) -> dict[tuple[int, int], list[tuple]]:
+    groups: dict[tuple[int, int], list[tuple]] = {}
+    for r in plan:
+        groups.setdefault((r[1], r[2]), []).append(r)
+    return groups
 
 def run_due(s: Settings, alerts: Alerts, only: int | None = None, dry_run: bool = False, force: bool = False) -> dict:
     """Organize every enabled account (or just `only`) that is due. One account's failure never blocks the others."""

@@ -10,6 +10,8 @@ class Summary(BaseModel):
     language: str = "en"
     confidence: Literal["high", "medium", "low"] = "medium"
     collection_id: int = 0   # routing choice from COLLECTIONS; 0 = none fits
+    collection_reason: str = ""   # what in the chosen collection's profile it matches
+    collection_confidence: Literal["high", "medium", "low"] = "low"   # only "high" routes
     recipe: bool = False     # the code then credits the creator (see writeback.build_block)
 
 class NewCollection(BaseModel):
@@ -29,13 +31,31 @@ class Proposal(BaseModel):
 
 class Move(BaseModel):
     item_id: int
-    collection_id: int = 0   # 0 = stays in Unsorted
+    collection_id: int = 0   # 0 = no collection clearly fits (assign: stays in Unsorted; rebalance: back to Unsorted)
+    confidence: Literal["high", "medium", "low"] = "low"   # only "high" moves
+    reason: str = ""
 
 class Assignment(BaseModel):
     moves: list[Move] = Field(default_factory=list)
 
+class Description(BaseModel):
+    collection_id: int
+    description: str
+
+class Descriptions(BaseModel):
+    items: list[Description] = Field(default_factory=list)
+
 class ProviderUnavailable(Exception):
     """Quota, overload or connection problem: try the next provider."""
+
+FIT_RULES = """How to judge whether a bookmark belongs in a collection from COLLECTIONS:
+- A collection's scope, when given, is the rule: the bookmark belongs only if the scope covers what it is about.
+  Its examples and common tags only illustrate the scope; without a scope, infer one from them.
+- A bookmark like one listed under "not here" does not belong there: the owner moved that kind out.
+- Sharing a word, a place, a mood, a person or an occasion is not belonging. A guide to jazz bars is not
+  music-making material; a restaurant list that mentions playlists is still a restaurant list.
+- Confidence is "high" only when a careful reader of that collection would expect this bookmark in it.
+  Anything less is "medium" or "low", and a weak or partial match means no collection."""
 
 SYSTEM_PROMPT = """You write terse, searchable notes about saved bookmarks for a personal knowledge base.
 Use ONLY the provided material (title, URL, description, transcript, on-screen text). Every fact, name,
@@ -64,10 +84,12 @@ on-screen text) is kept, attached to its ingredient or step: "1 tsp dashi powder
 Write the summary, takeaways and title in the language with ISO 639-1 code "{language}".
 Report the source material's own ISO 639-1 code in "language".
 Output strict JSON with fields: summary (string), key_takeaways (string[]), tags (string[]), title (string),
-language (ISO 639-1), confidence ("high"|"medium"|"low"), collection_id (integer), recipe (boolean: true when the
-material is a recipe for food or drink).
-collection_id: when COLLECTIONS is present, the id of the collection whose title, description and recent bookmarks
-show it already holds this kind of content. Use 0 when none clearly fits; a weak match is 0. Only ids from COLLECTIONS.
+language (ISO 639-1), confidence ("high"|"medium"|"low"), collection_id (integer), collection_reason (string),
+collection_confidence ("high"|"medium"|"low"), recipe (boolean: true when the material is a recipe for food or drink).
+collection_id: when COLLECTIONS is present, the id of the one collection this bookmark clearly belongs in, judged by
+the rules below; 0 when none does. Only ids from COLLECTIONS. collection_reason: a short phrase naming what in that
+collection's scope or examples it matches (empty for 0). collection_confidence: how sure the collection fits.
+""" + FIT_RULES + """
 AUDIO, when present, means the video uses a reused sound (a song or another person's audio), so TEXT may be lyrics
 or someone else's voice rather than the creator's words: use TEXT only where it clearly matches DESCRIPTION or
 ON_SCREEN_TEXT, and otherwise base the summary on those.
@@ -94,16 +116,43 @@ Output strict JSON with fields: new_collections ({{title, description, parent_id
 ({{from_id, into_id, reason}}[])."""
 
 ASSIGN_PROMPT = """You file UNSORTED bookmarks into existing COLLECTIONS. For each UNSORTED bookmark, collection_id is the id
-of the collection whose title, description and recent bookmarks show it already holds this kind of content. Use 0
-when none clearly fits; a weak match is 0. Only ids from COLLECTIONS.
-Output strict JSON with field moves ({item_id, collection_id}[]), one entry per UNSORTED bookmark."""
+of the one collection it clearly belongs in, or 0 when none does. Only ids from COLLECTIONS.
+""" + FIT_RULES + """
+Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
+per UNSORTED bookmark; reason is a short phrase naming what in the collection's scope or examples it matches."""
+
+REBALANCE_PROMPT = """You re-check FILED bookmarks, which the service filed into collections earlier, against COLLECTIONS.
+For each FILED bookmark, collection_id is the one collection it clearly belongs in, which may be the one it is in now,
+or 0 when none does. Only ids from COLLECTIONS.
+""" + FIT_RULES + """
+Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
+per FILED bookmark; reason is a short phrase naming what in the chosen collection's scope or examples it matches, or
+why none fits."""
+
+DESCRIBE_PROMPT = """You write scope descriptions for the owner's bookmark collections listed in DESCRIBE, using each one's
+title, common tags, examples and "not here" bookmarks from COLLECTIONS. A scope is one sentence of at most 200
+characters, in the form "What belongs; not what doesn't", specific enough that a reader can decide whether a new
+bookmark belongs (for example "Techniques, artists and albums I study for making music; not concerts, venues or
+playlists"). Describe what the examples have in common, not every example.
+Output strict JSON with field items ({collection_id, description}[]), one per DESCRIBE id."""
 
 MAX_WORDS = 6000
 
 def catalog_lines(catalog: list[dict]) -> list[str]:
-    return ["COLLECTIONS (id: title | description | recent bookmarks):"] + [
-        f"{c['id']}: {c['title']} | {c['description']} | {'; '.join(t for t in c['samples'] if t)}" for c in catalog
-    ] if catalog else ["COLLECTIONS: (none)"]
+    """Each collection's profile: scope (the rule), common tags, examples (title - summary), and "not here" bookmarks."""
+    if not catalog:
+        return ["COLLECTIONS: (none)"]
+    lines = ["COLLECTIONS (id: path, then its profile):"]
+    for c in catalog:
+        size = f" ({c['size']} bookmarks, made by {c['made_by']})" if "size" in c else ""
+        lines += [f"{c['id']}: {c['title']}{size}",
+                  f"  scope: {c['description'] or '(none: infer it from the examples)'}"]
+        if c.get("tags"):
+            lines.append(f"  common tags: {', '.join(c['tags'])}")
+        lines.append(f"  examples: {' | '.join(e for e in c.get('examples', []) if e) or '(none)'}")
+        if c.get("not_here"):
+            lines.append(f"  not here: {' | '.join(c['not_here'])}")
+    return lines
 
 def build_user_message(item: dict, ctype: str, ex: Extraction, existing_tags: list[str], owner_note: str = "",
                        catalog: list[dict] | None = None) -> str:

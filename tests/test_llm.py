@@ -8,7 +8,8 @@ ITEM = {"link": "https://www.tiktok.com/@u/video/1", "title": ""}
 
 def two(settings):
     return dataclasses.replace(settings, llm_providers=("a", "b"), llm_keys={"a": "k", "b": "k"},
-                               llm_models={"a": "model-a", "b": "model-b"})
+                               llm_models={"a": "model-a", "b": "model-b"},
+                               llm_decision_models={"a": "decide-a", "b": "decide-b"})
 
 def test_fallback_on_unavailable(settings, monkeypatch):
     def a(*_): raise ProviderUnavailable("429")
@@ -42,6 +43,17 @@ def test_user_message_collections():
     from raingist.llm.prompt import build_user_message
     assert "COLLECTIONS" not in build_user_message(ITEM, "tiktok", Extraction(), [])
     assert "COLLECTIONS: (none)" in build_user_message(ITEM, "tiktok", Extraction(), [], catalog=[])
-    msg = build_user_message(ITEM, "tiktok", Extraction(), [],
-                             catalog=[{"id": 7, "title": "Food / Recipes", "description": "eats", "samples": ["Pasta", ""]}])
-    assert "7: Food / Recipes | eats | Pasta" in msg
+    msg = build_user_message(ITEM, "tiktok", Extraction(), [], catalog=[
+        {"id": 7, "title": "Food / Recipes", "description": "eats", "tags": ["cooking"], "examples": ["Pasta - Cacio.", ""],
+         "not_here": ["NYC restaurants"], "members": [{"_id": 1}]},
+        {"id": 8, "title": "music inspiration", "description": "", "examples": []}])
+    assert ("7: Food / Recipes\n  scope: eats\n  common tags: cooking\n  examples: Pasta - Cacio.\n"
+            "  not here: NYC restaurants\n8: music inspiration\n  scope: (none: infer it from the examples)\n"
+            "  examples: (none)") in msg
+    assert "_id" not in msg   # members stay out of the prompt
+
+def test_decision_calls_use_decision_model(settings, monkeypatch):
+    from raingist.llm.prompt import Assignment
+    monkeypatch.setattr(llm, "PROVIDERS", {"a": lambda *_: Assignment(), "b": lambda *_: Assignment()})
+    assert llm.rebalance(two(settings), "msg")[1] == "decide-a"
+    assert llm.assign(two(settings), "msg")[1] == "decide-a"

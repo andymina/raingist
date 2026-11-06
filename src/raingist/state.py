@@ -34,15 +34,23 @@ class Attempts:
 
 class Placements:
     """Collections the service filed each bookmark into (routing and Organizing), {bookmark id: [collection ids]}.
-    A bookmark found outside all of them was moved there by the owner, so they stay off limits for it."""
+    A bookmark found outside all of them was moved there by the owner, so they stay off limits for it.
+    `titles` caches the titles of bookmarks the owner moved out, shown as "not here" examples."""
     def __init__(self, path: Path):
         self.path = path
-        self.data: dict[str, list[int]] = json.loads(path.read_text()) if path.exists() else {}
+        raw = json.loads(path.read_text()) if path.exists() else {}
+        self.data: dict[str, list[int]] = raw.get("filed", {})
+        self.titles: dict[str, str] = raw.get("titles", {})
 
     def _save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=1)); tmp.replace(self.path)
+        tmp.write_text(json.dumps({"filed": self.data, "titles": self.titles}, indent=1, ensure_ascii=False))
+        tmp.replace(self.path)
+
+    def remember_title(self, rid: int, title: str) -> None:
+        self.titles[str(rid)] = title
+        self._save()
 
     def record(self, ids, collection: int) -> None:
         for rid in ids:

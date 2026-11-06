@@ -29,9 +29,8 @@ class FakeRD:
     def __init__(self, token): assert token == "t"
     def collections(self): return self.collections_list
     def search(self, query, max_pages=10, collection=0):
-        assert collection == 5; return self.inbox
+        return self.inbox if collection == 5 else [{"_id": 70, "title": "Pasta", "tags": []}]
     def tags(self): return []
-    def recent_titles(self, cid, n, skip=()): return ["Pasta"]
 
 def test_account_cycle_systemic(settings, make_account, alerts, monkeypatch):
     acct = make_account(settings, 1)
