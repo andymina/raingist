@@ -1,20 +1,21 @@
 import logging, datetime as dt, json, uuid
 from .settings import Settings
 from .accounts import Account, AccountError, store, access_token
-from .raindrop import Raindrop
+from .raindrop import Raindrop, RaindropError
 from .extract import EXTRACTORS, detect
 from .extract.common import Extraction, PermanentFailure, TransientFailure
 from .extract import ytdl
 from . import cache, writeback
 from .llm import summarize
-from .state import Attempts
+from .state import Attempts, Placements, load_placements
 from .notify import Alerts
 
 log = logging.getLogger(__name__)
 SYSTEMIC_STREAK = 3
 INBOX_TITLE = "raingist"       # each account's processing inbox, found by name
 UNSORTED = -1                  # Raindrop's "Unsorted" collection
-MAX_COLLECTIONS, SAMPLE_TITLES = 50, 5
+MAX_COLLECTIONS = 50
+EXAMPLES, NOT_HERE, MEMBER_PAGES = 15, 5, 4   # per collection profile; members are read 50 a page
 EXCLUDE_MARK = "#raingist-exclude"         # in a collection's description: the service never touches it
 PROVENANCE = "(created by raingist)"       # ends the description of collections Organizing created
 
@@ -58,21 +59,66 @@ def pending_items(s: Settings, rd: Raindrop, inbox: int) -> list[dict]:
 def excluded(c: dict) -> bool:
     return EXCLUDE_MARK in (c.get("description") or "").lower()
 
-def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int) -> list[dict]:
-    """Routing candidates: every collection except the inbox and excluded ones, with path, description and recent titles."""
+def spread(items: list, n: int) -> list:
+    """Up to n items evenly spaced across the list (newest to oldest), so a profile is not just the latest additions."""
+    if len(items) <= n:
+        return items
+    return [items[round(i * (len(items) - 1) / (n - 1))] for i in range(n)]
+
+def example(item: dict) -> str:
+    title, summary = (item.get("title") or "").strip(), writeback.summary_line(item.get("note"))
+    return f"{title} - {summary}"[:220] if summary else title[:220]
+
+def moved_out_titles(rd: Raindrop, placements: Placements, ids: list[int]) -> list[str]:
+    """Titles of bookmarks the owner moved out of a collection, cached; a deleted bookmark is skipped."""
+    titles = []
+    for rid in ids:
+        title = placements.titles.get(str(rid))
+        if title is None:
+            try:
+                title = rd.get(rid).get("title") or ""
+            except RaindropError:
+                continue
+            placements.remember_title(rid, title)
+        if title:
+            titles.append(title)
+    return titles
+
+def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int,
+                       placements: Placements | None = None) -> list[dict]:
+    """Routing candidates (every collection except the inbox and excluded ones), each with a profile for the LLM:
+    path, description (the scope, which decides), up to EXAMPLES bookmarks spread across the collection,
+    and "not here" bookmarks the service filed there that the owner moved out. In an owner's collection only bookmarks
+    the service did not file count as evidence, so a wrong filing never pulls in more like it. `members` (the bookmarks
+    read, newest first) is for Organizing and never sent to the LLM."""
     cols = [c for c in collections if c["_id"] != inbox and not excluded(c)]
     by_id = {c["_id"]: c for c in cols}
     def path(c):
         parent = by_id.get((c.get("parent") or {}).get("$id"))
         return f"{path(parent)} / {c['title']}" if parent else c["title"]
-    return [{"id": c["_id"], "title": path(c), "description": c.get("description") or "",
-             "samples": rd.recent_titles(c["_id"], SAMPLE_TITLES)} for c in cols[:MAX_COLLECTIONS]]
+    catalog = []
+    for c in cols[:MAX_COLLECTIONS]:
+        description = c.get("description") or ""
+        made_by = "raingist" if PROVENANCE in description else "owner"
+        members = rd.search("", max_pages=MEMBER_PAGES, collection=c["_id"])
+        placed = placements.placed_by_service(c["_id"]) if placements else set()
+        evidence = members if made_by == "raingist" else [m for m in members if m["_id"] not in placed]
+        gone = sorted(placed - {m["_id"] for m in members}, reverse=True)[:NOT_HERE]   # newest ids first
+        catalog.append({"id": c["_id"], "title": path(c), "description": description, "made_by": made_by,
+                        "size": c.get("count", len(members)),
+                        "examples": [example(m) for m in spread(evidence, EXAMPLES)],
+                        "not_here": moved_out_titles(rd, placements, gone) if placements else [],
+                        "members": members})
+    return catalog
 
 def route(summary, catalog: list[dict]) -> int:
-    return summary.collection_id if summary.collection_id in {c["id"] for c in catalog} else UNSORTED
+    """The chosen collection when it is a candidate and the model is highly confident it fits, else Unsorted."""
+    if summary.collection_id in {c["id"] for c in catalog} and summary.collection_confidence == "high":
+        return summary.collection_id
+    return UNSORTED
 
 def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, rid: int, existing_tags: list[str],
-                 inbox: int, catalog: list[dict], dry_run: bool = False) -> str:
+                 inbox: int, catalog: list[dict], dry_run: bool = False, placements: Placements | None = None) -> str:
     """Returns one of: done, failed, retry, noop. Done = enriched and routed out of the inbox in one PUT."""
     item = rd.get(rid)   # fresh, right before writing
     tags = {t.lower() for t in item.get("tags", [])}
@@ -106,9 +152,13 @@ def process_item(s: Settings, acct: Account, rd: Raindrop, attempts: Attempts, r
               "collection": {"$id": dest}}
     if writeback.is_placeholder_title(item.get("title"), item["link"]) and summary.title.strip():
         fields["title"] = summary.title.strip()[:1000]
-    log.info("[%s] item %s -> collection %s", acct.id, rid, next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"))
+    log.info("[%s] item %s -> collection %s (picked %s, %s: %s)", acct.id, rid,
+             next((c["title"] for c in catalog if c["id"] == dest), "Unsorted"), summary.collection_id,
+             summary.collection_confidence, summary.collection_reason)
     attempts.clear(rid)
     _put(acct, rd, item, dry_run, fields)
+    if placements is not None and dest != UNSORTED and not dry_run:
+        placements.record([rid], dest)
     return "done"
 
 def _fail(s: Settings, acct: Account, rd: Raindrop, item: dict, note: str, dry_run: bool) -> str:
@@ -133,13 +183,15 @@ def run_account_cycle(s: Settings, acct: Account, alerts: Alerts, dry_run: bool 
     pending = [i for i in pending_items(s, rd, inbox) if attempts.due(i["_id"])]
     pending = pending[: limit or s.max_items_per_account]
     existing_tags = rd.tags() if pending else []
-    catalog = collection_catalog(rd, collections, inbox) if pending else []
+    placements = load_placements(state_dir)
+    catalog = collection_catalog(rd, collections, inbox, placements) if pending else []
     counts: dict[str, int] = {}
     streak, last_error = 0, ""
     for item in pending:
         rid = item["_id"]
         try:
-            r = process_item(s, acct, rd, attempts, rid, existing_tags, inbox, catalog, dry_run=dry_run)
+            r = process_item(s, acct, rd, attempts, rid, existing_tags, inbox, catalog, dry_run=dry_run,
+                             placements=placements)
         except Exception as e:   # one bad item must not stop the rest; logged with traceback, alerted via streak
             log.exception("[%s] item %s crashed: %s", acct.id, rid, e)
             r, last_error = "crash", str(e)

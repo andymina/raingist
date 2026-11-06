@@ -29,16 +29,15 @@ class FakeRD:
     def __init__(self, token): assert token == "t"
     def collections(self): return self.collections_list
     def search(self, query, max_pages=10, collection=0):
-        assert collection == 5; return self.inbox
+        return self.inbox if collection == 5 else [{"_id": 70, "title": "Pasta", "tags": []}]
     def tags(self): return []
-    def recent_titles(self, cid, n): return ["Pasta"]
 
 def test_account_cycle_systemic(settings, make_account, alerts, monkeypatch):
     acct = make_account(settings, 1)
     FakeRD.inbox = [{"_id": i, "link": f"https://www.tiktok.com/@u/video/{i}", "tags": []} for i in (1, 2, 3)]
     FakeRD.inbox.append({"_id": 4, "link": "https://example.com/x", "tags": []})
     seen = []
-    def fake_process(s, a, rd, attempts, rid, tags, inbox, catalog, dry_run=False):
+    def fake_process(s, a, rd, attempts, rid, tags, inbox, catalog, dry_run=False, placements=None):
         seen.append(rid); return "retry"
     monkeypatch.setattr(pipeline, "Raindrop", FakeRD)
     monkeypatch.setattr(pipeline, "access_token", lambda s, a: "t")
@@ -54,7 +53,7 @@ def test_account_cycle_passes_inbox_and_catalog(settings, make_account, alerts, 
     FakeRD.inbox = [{"_id": 1, "link": "https://www.tiktok.com/@u/video/1", "tags": []},
                     {"_id": 2, "link": "https://www.tiktok.com/@u/video/2", "tags": ["raingist-skip"]}]
     seen = []
-    def fake_process(s, a, rd, attempts, rid, tags, inbox, catalog, dry_run=False):
+    def fake_process(s, a, rd, attempts, rid, tags, inbox, catalog, dry_run=False, placements=None):
         seen.append((rid, inbox, [c["id"] for c in catalog])); return "done"
     monkeypatch.setattr(pipeline, "Raindrop", FakeRD)
     monkeypatch.setattr(pipeline, "access_token", lambda s, a: "t")

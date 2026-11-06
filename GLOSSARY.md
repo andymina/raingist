@@ -27,6 +27,18 @@ _Avoid_: cleanup, auto-sort, librarian
 **Excluded collection**:
 A collection whose description contains `#raingist-exclude`. The Service never routes to, files into, merges or nests under it.
 
+**Placement**:
+A record that the Service filed a Bookmark into a collection, kept per Account. A Bookmark found back in Unsorted is never filed into a collection it was placed in before, and an owner's collection is described only by Bookmarks the Service did not place there.
+_Avoid_: history, filing log
+
+**Profile**:
+What the LLM sees of a collection when deciding where a Bookmark belongs: its description (the rule), example Bookmarks spread across it, and "not here" Bookmarks the owner moved out. In an owner's collection only Bookmarks the owner placed are examples.
+_Avoid_: samples, summary
+
+**Rebalancing**:
+The Organizing step that re-checks Bookmarks the Service filed and moves (or suggests moving) those that no longer clearly fit. Bookmarks the owner placed are never moved.
+_Avoid_: re-sorting, cleanup
+
 **Provenance**:
 The `(created by raingist)` suffix on the description of a collection that Organizing created. A collection without it is the owner's, and survives any merge with one that has it.
 

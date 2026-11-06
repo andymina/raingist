@@ -4,8 +4,8 @@ from .settings import load_settings, data_ready
 from .accounts import AccountError, store, connect, access_token
 from .raindrop import Raindrop, authorize_url
 from .oauth_callback import wait_for_code
-from .state import Attempts, RunLock, Busy
-from .organize import run_due
+from .state import Attempts, RunLock, Busy, load_placements
+from .organize import run_due, draft_descriptions
 from .pipeline import run_cycle, process_item, extract, pending_items, collection_catalog, find_inbox
 from .extract import detect
 from .llm import summarize
@@ -108,9 +108,24 @@ def cmd_process(s, args):
     rd = Raindrop(access_token(s, acct))
     with RunLock(s.state_dir / "run.lock"):
         state_dir = s.state_dir / str(acct.id); state_dir.mkdir(parents=True, exist_ok=True)
-        collections = rd.collections(); inbox = find_inbox(collections)
+        collections = rd.collections(); inbox = find_inbox(collections); placements = load_placements(state_dir)
         print(process_item(s, acct, rd, Attempts(state_dir / "attempts.json", s.retry_backoff), args.id, rd.tags(),
-                           inbox, collection_catalog(rd, collections, inbox), dry_run=args.dry_run))
+                           inbox, collection_catalog(rd, collections, inbox, placements), dry_run=args.dry_run,
+                           placements=placements))
+
+def cmd_describe(s, args):
+    """Draft scope descriptions for collections you made that have none. Prints only; paste the ones you like into
+    Raindrop (the description decides what raingist files there)."""
+    require_data(s)
+    for aid in ([args.account] if args.account else store(s).ids(s)):
+        acct = load_account_or_exit(s, aid)
+        rd = Raindrop(access_token(s, acct))
+        collections = rd.collections()
+        catalog = collection_catalog(rd, collections, find_inbox(collections), load_placements(s.state_dir / str(aid)))
+        drafts = draft_descriptions(s, catalog)
+        print(f"== {aid} {acct.name}: " + ("every collection you made has a description" if not drafts else ""))
+        for title, description in drafts:
+            print(f"{title}\n  {description}")
 
 def cmd_test(s, args):
     """Extract + summarize one URL. No Raindrop access; cache goes to work/test-cache."""
@@ -181,6 +196,8 @@ def main():
     g.add_argument("--force", action="store_true", help="run now even if not due or below ORGANIZE_FIRST_RUN")
     p = sub.add_parser("process"); p.add_argument("--account", type=int, required=True); p.add_argument("--id", type=int, required=True); p.add_argument("--dry-run", action="store_true")
     t = sub.add_parser("test"); t.add_argument("--url", required=True); t.add_argument("--ocr", action="store_true"); t.add_argument("--note", default="", help="bookmark note; only $start./$end. spans are sent")
+    d = sub.add_parser("describe", help="draft descriptions for your collections that have none (prints only)")
+    d.add_argument("--account", type=int)
     sub.add_parser("connect")
     a = sub.add_parser("accounts"); a.add_argument("action", nargs="?", choices=["list", "enable", "disable", "disconnect"], default="list"); a.add_argument("id", nargs="?", type=int)
     sub.add_parser("status")
@@ -192,4 +209,5 @@ def main():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     s = load_settings()
     {"serve": cmd_serve, "once": cmd_once, "organize": cmd_organize, "process": cmd_process, "test": cmd_test,
+     "describe": cmd_describe,
      "connect": cmd_connect, "accounts": cmd_accounts, "status": cmd_status, "restart": cmd_restart}[args.cmd](s, args)

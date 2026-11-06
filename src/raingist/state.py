@@ -32,6 +32,63 @@ class Attempts:
         if self.data.pop(str(rid), None) is not None:
             self._save()
 
+class Placements:
+    """Collections the service filed each bookmark into (routing and Organizing), {bookmark id: [collection ids]}.
+    A bookmark found outside all of them was moved there by the owner, so they stay off limits for it.
+    `titles` caches the titles of bookmarks the owner moved out, shown as "not here" examples."""
+    def __init__(self, path: Path):
+        self.path = path
+        raw = json.loads(path.read_text()) if path.exists() else {}
+        self.data: dict[str, list[int]] = raw.get("filed", {})
+        self.titles: dict[str, str] = raw.get("titles", {})
+        self.journals_read: str = raw.get("journals_read", "")   # newest Organizing journal already absorbed
+
+    def _save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"filed": self.data, "titles": self.titles, "journals_read": self.journals_read},
+                                  indent=1, ensure_ascii=False))
+        tmp.replace(self.path)
+
+    def remember_title(self, rid: int, title: str) -> None:
+        self.titles[str(rid)] = title
+        self._save()
+
+    def record(self, ids, collection: int) -> None:
+        for rid in ids:
+            cids = self.data.setdefault(str(rid), [])
+            if collection not in cids:
+                cids.append(collection)
+        self._save()
+
+    def filed_into(self, rid: int) -> set[int]:
+        return set(self.data.get(str(rid), []))
+
+    def placed_by_service(self, collection: int) -> set[int]:
+        """Bookmarks the service filed into `collection` (some may have been moved out since)."""
+        return {int(rid) for rid, cids in self.data.items() if collection in cids}
+
+def load_placements(state_dir: Path) -> Placements:
+    """The account's placements, first absorbing any Organizing journal not read yet (so runs recorded before
+    placements existed, or by an older version, still count). Journals are named by UTC time, so names sort in order."""
+    p = Placements(state_dir / "placements.json")
+    new = [j for j in sorted((state_dir / "organize").glob("*.json")) if j.name > p.journals_read]
+    if p.path.exists() and not new:
+        return p
+    for journal in new:
+        for step in json.loads(journal.read_text()):
+            if step["step"] == "moved":
+                p.record(step["item_ids"], step["to"])
+            elif step["step"] == "created" and step.get("id"):
+                p.record(step["item_ids"], step["id"])
+            elif step["step"] == "merged":
+                p.record(step["moved"], step["into"])
+            elif step["step"] == "rebalanced" and step["to"] != -1:
+                p.record([step["item_id"]], step["to"])
+        p.journals_read = journal.name
+    p._save()
+    return p
+
 class RunLock:
     def __init__(self, path: Path):
         self.f = open(path, "w")

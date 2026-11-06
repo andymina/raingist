@@ -85,10 +85,6 @@ class Raindrop:
         """Deletes the collection and its descendants; any bookmarks still in it go to Trash, so empty it first."""
         self._req("DELETE", f"/collection/{cid}")
 
-    def recent_titles(self, collection: int, n: int) -> list[str]:
-        items = self._req("GET", f"/raindrops/{collection}", params={"sort": "-created", "perpage": n}).get("items", [])
-        return [i.get("title", "") for i in items]
-
     def tags(self) -> list[str]:
         return [t["_id"] for t in self._req("GET", "/tags").get("items", [])]
 

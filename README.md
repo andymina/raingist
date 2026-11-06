@@ -98,6 +98,7 @@ The sentinel file `DATA_DIR/.raingist` proves the drive is mounted. If it's miss
 | `serve` | Long-running loop (what launchd runs) |
 | `once [--account ID] [--dry-run] [--limit N]` | One cycle now. `--dry-run` logs the would-be `PUT`s |
 | `organize [--account ID] [--dry-run] [--force]` | Organize Unsorted if due; `--force` runs it now regardless of schedule or threshold, even with `ORGANIZE_ENABLED=0`. Dry runs (`once` too) send no alerts |
+| `describe [--account ID]` | Print a draft description for each collection you made that has none (never writes to Raindrop) |
 | `process --account ID --id RAINDROP_ID [--dry-run]` | One bookmark |
 | `test --url URL [--ocr] [--note TEXT]` | Extract and summarize one URL without touching Raindrop; `--note` tries an owner note |
 | `connect` | OAuth-connect (or reconnect) a Raindrop account |
@@ -138,7 +139,7 @@ Four free Claude Code plugins: setup, planning, frontend design, security.
 | Read on-screen text too | Move it back into `raingist` with `raingist-ocr` and `raingist-redo` |
 | Pick the destination yourself | Ask in its note, e.g. `put this in Recipes` |
 
-- **Where it goes:** the same Gemini call that writes the summary picks a destination. It compares the bookmark with each collection's name, description and 5 most recent bookmark titles (nested collections included, as `Parent / Child`). A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
+- **Where it goes:** the same Gemini call that writes the summary picks a destination from each collection's **profile** (nested collections included, as `Parent / Child`): its description, which is the rule when present; up to 15 bookmarks spread across it, each as title and summary line; and "not here" bookmarks raingist filed there that you moved out. In your own collections only bookmarks you placed count as examples, so one wrong filing can't pull in more like it. The model must name what it matched and be highly confident; anything less goes to Unsorted. A one-sentence description ("what belongs; not what doesn't") is the best steer: `uv run raingist describe` drafts them for your collections that have none. A weak match goes to Unsorted, so a new kind of content never lands in the wrong place. Routing improves as your collections fill up.
 - **Moving back in without `raingist-redo`** keeps the existing summary and just re-routes the bookmark.
 - **Failures stay in the inbox**, tagged `raingist-failed` with the reason in the note. So do non-TikToks, untouched. Retries in progress also wait there.
 - Each account's inbox is its one collection named `raingist` (any letter case), found by name every cycle. If an account has none, or more than one, its cycle stops with an `account:<id>` alert saying so.
@@ -151,13 +152,18 @@ On by default (`ORGANIZE_ENABLED=0` turns it off). The first run happens once Un
 1. **Files** Unsorted bookmarks into existing collections, on the same "clear fit" bar as routing.
 2. **Creates collections** from what is left, for topics shared by at least 5 bookmarks (`ORGANIZE_MIN_GROUP`). The title copies your naming style. The description is one scope sentence ending in `(created by raingist)`. A new collection can sit at the top level or one level under an existing one. A title that clashes with an existing collection files into that collection instead.
 3. **Merges** collections that serve the same purpose under different names ("Recipes" and "Cooking"). Yours survives over one raingist made; otherwise the larger survives. The emptied collection is deleted. Parents, children and shared collections are never merge sources.
+4. **Rebalances** bookmarks raingist itself filed (by routing or Organizing) that no longer clearly fit where they are, to a better collection or back to Unsorted. Bookmarks you placed yourself are never candidates. `ORGANIZE_REBALANCE=suggest` (the default) only lists the moves in the alert and the journal; `move` makes up to `ORGANIZE_REBALANCE_MAX` (10) a run; `off` skips the step.
 
-It reads each bookmark's title, tags, excerpt and whole note, oldest 200 first (`ORGANIZE_MAX_ITEMS`). It makes at most two Gemini calls per run: the second sees only the bookmarks the first couldn't file.
+Filing, merging and rebalancing use `GEMINI_DECISION_MODEL` when set (for example a stronger model than the summary's), else `GEMINI_MODEL`.
+
+It reads each bookmark's title, tags, excerpt and whole note, oldest 200 first (`ORGANIZE_MAX_ITEMS`). It makes at most three Gemini calls per run: filing, then proposals (which see only the bookmarks filing couldn't place), then rebalancing.
 
 | You want to | Do this |
 |---|---|
 | Keep a collection out of it (and out of routing) | Put `#raingist-exclude` anywhere in its description |
 | Keep a bookmark in Unsorted | Tag it `raingist-skip` |
+| Undo a filing | Move the bookmark back to Unsorted (or anywhere else); raingist never files it into that collection again, and shows it there as a "not here" example |
+| Get descriptions for your collections | `uv run raingist describe` prints a draft for each one you made without a description; paste the ones you like into Raindrop |
 | Make a raingist-made collection yours | Delete `(created by raingist)` from its description |
 | Preview a run | `uv run raingist organize --dry-run --force` |
 | See what a run did, or rebuild a merged-away collection | `DATA_DIR/state/<account>/organize/<time>.json` |
