@@ -32,7 +32,7 @@ A record that the Service filed a Bookmark into a collection, kept per Account. 
 _Avoid_: history, filing log
 
 **Profile**:
-What the LLM sees of a collection when deciding where a Bookmark belongs: its description (the rule), common tags, example Bookmarks spread across it, and "not here" Bookmarks the owner moved out. In an owner's collection only Bookmarks the owner placed are examples.
+What the LLM sees of a collection when deciding where a Bookmark belongs: its description (the rule), example Bookmarks spread across it, and "not here" Bookmarks the owner moved out. In an owner's collection only Bookmarks the owner placed are examples.
 _Avoid_: samples, summary
 
 **Rebalancing**:

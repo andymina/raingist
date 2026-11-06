@@ -50,9 +50,9 @@ class ProviderUnavailable(Exception):
 
 FIT_RULES = """How to judge whether a bookmark belongs in a collection from COLLECTIONS:
 - A collection's scope, when given, is the rule: the bookmark belongs only if the scope covers what it is about.
-  Its examples and common tags only illustrate the scope; without a scope, infer one from them.
+  Its examples only illustrate the scope; without a scope, infer one from what the examples have in common.
 - A bookmark like one listed under "not here" does not belong there: the owner moved that kind out.
-- Sharing a word, a place, a mood, a person or an occasion is not belonging. A guide to jazz bars is not
+- Sharing a word, a tag, a place, a mood, a person or an occasion is not belonging. A guide to jazz bars is not
   music-making material; a restaurant list that mentions playlists is still a restaurant list.
 - Confidence is "high" only when a careful reader of that collection would expect this bookmark in it.
   Anything less is "medium" or "low", and a weak or partial match means no collection."""
@@ -121,16 +121,16 @@ of the one collection it clearly belongs in, or 0 when none does. Only ids from 
 Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
 per UNSORTED bookmark; reason is a short phrase naming what in the collection's scope or examples it matches."""
 
-REBALANCE_PROMPT = """You re-check FILED bookmarks, which the service filed into collections earlier, against COLLECTIONS.
-For each FILED bookmark, collection_id is the one collection it clearly belongs in, which may be the one it is in now,
-or 0 when none does. Only ids from COLLECTIONS.
+REBALANCE_PROMPT = """You re-check FILED bookmarks, which an automatic filer put into collections earlier, against COLLECTIONS.
+Judge each FILED bookmark fresh: collection_id is the one collection it clearly belongs in, or 0 when none does.
+Only ids from COLLECTIONS.
 """ + FIT_RULES + """
 Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
 per FILED bookmark; reason is a short phrase naming what in the chosen collection's scope or examples it matches, or
 why none fits."""
 
 DESCRIBE_PROMPT = """You write scope descriptions for the owner's bookmark collections listed in DESCRIBE, using each one's
-title, common tags, examples and "not here" bookmarks from COLLECTIONS. A scope is one sentence of at most 200
+title, examples and "not here" bookmarks from COLLECTIONS. A scope is one sentence of at most 200
 characters, in the form "What belongs; not what doesn't", specific enough that a reader can decide whether a new
 bookmark belongs (for example "Techniques, artists and albums I study for making music; not concerts, venues or
 playlists"). Describe what the examples have in common, not every example.
@@ -139,7 +139,8 @@ Output strict JSON with field items ({collection_id, description}[]), one per DE
 MAX_WORDS = 6000
 
 def catalog_lines(catalog: list[dict]) -> list[str]:
-    """Each collection's profile: scope (the rule), common tags, examples (title - summary), and "not here" bookmarks."""
+    """Each collection's profile: scope (the rule), examples (title - summary), and "not here" bookmarks. No tag
+    summary: the model matched tags instead of judging scope."""
     if not catalog:
         return ["COLLECTIONS: (none)"]
     lines = ["COLLECTIONS (id: path, then its profile):"]
@@ -147,8 +148,6 @@ def catalog_lines(catalog: list[dict]) -> list[str]:
         size = f" ({c['size']} bookmarks, made by {c['made_by']})" if "size" in c else ""
         lines += [f"{c['id']}: {c['title']}{size}",
                   f"  scope: {c['description'] or '(none: infer it from the examples)'}"]
-        if c.get("tags"):
-            lines.append(f"  common tags: {', '.join(c['tags'])}")
         lines.append(f"  examples: {' | '.join(e for e in c.get('examples', []) if e) or '(none)'}")
         if c.get("not_here"):
             lines.append(f"  not here: {' | '.join(c['not_here'])}")

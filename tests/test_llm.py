@@ -44,10 +44,10 @@ def test_user_message_collections():
     assert "COLLECTIONS" not in build_user_message(ITEM, "tiktok", Extraction(), [])
     assert "COLLECTIONS: (none)" in build_user_message(ITEM, "tiktok", Extraction(), [], catalog=[])
     msg = build_user_message(ITEM, "tiktok", Extraction(), [], catalog=[
-        {"id": 7, "title": "Food / Recipes", "description": "eats", "tags": ["cooking"], "examples": ["Pasta - Cacio.", ""],
+        {"id": 7, "title": "Food / Recipes", "description": "eats", "examples": ["Pasta - Cacio.", ""],
          "not_here": ["NYC restaurants"], "members": [{"_id": 1}]},
         {"id": 8, "title": "music inspiration", "description": "", "examples": []}])
-    assert ("7: Food / Recipes\n  scope: eats\n  common tags: cooking\n  examples: Pasta - Cacio.\n"
+    assert ("7: Food / Recipes\n  scope: eats\n  examples: Pasta - Cacio.\n"
             "  not here: NYC restaurants\n8: music inspiration\n  scope: (none: infer it from the examples)\n"
             "  examples: (none)") in msg
     assert "_id" not in msg   # members stay out of the prompt

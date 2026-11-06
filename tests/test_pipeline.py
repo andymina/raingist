@@ -163,7 +163,7 @@ def test_collection_catalog_paths_and_skips_inbox():
     catalog = pipeline.collection_catalog(rd, cols, INBOX)
     assert [(c["id"], c["title"], c["description"], c["made_by"], c["size"]) for c in catalog] == [
         (1, "Food", "eats", "owner", 1), (2, "Food / Recipes", "", "owner", 0)]
-    assert catalog[0]["examples"] == ["Pasta - Cacio e pepe."] and catalog[0]["tags"] == ["cooking"]
+    assert catalog[0]["examples"] == ["Pasta - Cacio e pepe."]
 
 def test_catalog_profile_uses_owner_picks_and_lists_moved_out(tmp_path):
     from raingist.state import Placements
@@ -176,7 +176,7 @@ def test_catalog_profile_uses_owner_picks_and_lists_moved_out(tmp_path):
                         bm(5, "Synex", ["music"], "Beat-making session.")],
                     2: [bm(102, "Orca", ["github"])]}, gone={200: "Thai restaurants"})
     music, tools = pipeline.collection_catalog(rd, cols, INBOX, p)
-    assert music["examples"] == ["Synex - Beat-making session."] and music["tags"] == ["music"]   # service filings ignored
+    assert music["examples"] == ["Synex - Beat-making session."]   # service filings ignored
     assert music["not_here"] == ["Thai restaurants"] and music["members"][0]["_id"] == 100
     assert tools["examples"] == ["Orca"] and tools["made_by"] == "raingist"   # its own collection keeps every example
     pipeline.collection_catalog(rd, cols, INBOX, p)

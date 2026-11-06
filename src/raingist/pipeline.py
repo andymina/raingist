@@ -1,5 +1,4 @@
 import logging, datetime as dt, json, uuid
-from collections import Counter
 from .settings import Settings
 from .accounts import Account, AccountError, store, access_token
 from .raindrop import Raindrop, RaindropError
@@ -16,7 +15,7 @@ SYSTEMIC_STREAK = 3
 INBOX_TITLE = "raingist"       # each account's processing inbox, found by name
 UNSORTED = -1                  # Raindrop's "Unsorted" collection
 MAX_COLLECTIONS = 50
-EXAMPLES, PROFILE_TAGS, NOT_HERE, MEMBER_PAGES = 15, 8, 5, 4   # per collection profile; members read 50 a page
+EXAMPLES, NOT_HERE, MEMBER_PAGES = 15, 5, 4   # per collection profile; members are read 50 a page
 EXCLUDE_MARK = "#raingist-exclude"         # in a collection's description: the service never touches it
 PROVENANCE = "(created by raingist)"       # ends the description of collections Organizing created
 
@@ -88,7 +87,7 @@ def moved_out_titles(rd: Raindrop, placements: Placements, ids: list[int]) -> li
 def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int,
                        placements: Placements | None = None) -> list[dict]:
     """Routing candidates (every collection except the inbox and excluded ones), each with a profile for the LLM:
-    path, description (the scope, which decides), common tags, up to EXAMPLES bookmarks spread across the collection,
+    path, description (the scope, which decides), up to EXAMPLES bookmarks spread across the collection,
     and "not here" bookmarks the service filed there that the owner moved out. In an owner's collection only bookmarks
     the service did not file count as evidence, so a wrong filing never pulls in more like it. `members` (the bookmarks
     read, newest first) is for Organizing and never sent to the LLM."""
@@ -104,10 +103,9 @@ def collection_catalog(rd: Raindrop, collections: list[dict], inbox: int,
         members = rd.search("", max_pages=MEMBER_PAGES, collection=c["_id"])
         placed = placements.placed_by_service(c["_id"]) if placements else set()
         evidence = members if made_by == "raingist" else [m for m in members if m["_id"] not in placed]
-        tags = Counter(t.lower() for m in evidence for t in m.get("tags", []) if not t.lower().startswith("raingist-"))
         gone = sorted(placed - {m["_id"] for m in members}, reverse=True)[:NOT_HERE]   # newest ids first
         catalog.append({"id": c["_id"], "title": path(c), "description": description, "made_by": made_by,
-                        "size": c.get("count", len(members)), "tags": [t for t, _ in tags.most_common(PROFILE_TAGS)],
+                        "size": c.get("count", len(members)),
                         "examples": [example(m) for m in spread(evidence, EXAMPLES)],
                         "not_here": moved_out_titles(rd, placements, gone) if placements else [],
                         "members": members})

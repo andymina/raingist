@@ -41,14 +41,22 @@ def unsorted_items(s: Settings, rd: Raindrop) -> list[dict]:
 def flat(text: str | None, n: int) -> str:
     return " ".join((text or "").split())[:n]
 
-def build_message(catalog: list[dict], items: list[dict], label: str = "UNSORTED",
-                  current: dict[int, int] | None = None) -> str:
-    """Collection profiles, then the bookmarks to decide on; `current` adds each one's collection (rebalancing)."""
-    where = lambda i: f"in {current[i['_id']]} | " if current else ""
-    entries = [f"{i['_id']}: {where(i)}{i.get('title', '')} | tags: {', '.join(i.get('tags', []))}"
-               f" | {flat(i.get('excerpt'), EXCERPT_CHARS)} | note: {flat(i.get('note'), NOTE_CHARS)}" for i in items]
-    header = f"{label} (id: {'collection | ' if current else ''}title | tags | excerpt | note):"
-    return "\n".join([*catalog_lines(catalog), header, *(entries or ["(none)"])])
+def build_message(catalog: list[dict], items: list[dict], label: str = "UNSORTED") -> str:
+    """Collection profiles, then the bookmarks to decide on. Bookmarks are numbered 1..n instead of their 10-digit
+    Raindrop ids, which the model mistypes (`unref` maps answers back). Where a bookmark is now is never shown, so
+    rebalancing judges each one fresh instead of defending its current collection."""
+    entries = [f"{n}: {i.get('title', '')} | tags: {', '.join(i.get('tags', []))}"
+               f" | {flat(i.get('excerpt'), EXCERPT_CHARS)} | note: {flat(i.get('note'), NOTE_CHARS)}"
+               for n, i in enumerate(items, 1)]
+    return "\n".join([*catalog_lines(catalog), f"{label} (id: title | tags | excerpt | note):", *(entries or ["(none)"])])
+
+def unref(answer, items: list[dict]):
+    """Map the 1..n bookmark numbers in an Assignment or Proposal back to Raindrop ids; unknown numbers are dropped."""
+    ref = {n: i["_id"] for n, i in enumerate(items, 1)}
+    if isinstance(answer, Assignment):
+        return Assignment(moves=[m.model_copy(update={"item_id": ref[m.item_id]}) for m in answer.moves if m.item_id in ref])
+    return answer.model_copy(update={"new_collections": [
+        n.model_copy(update={"item_ids": [ref[i] for i in n.item_ids if i in ref]}) for n in answer.new_collections]})
 
 def validate_proposal(p: Proposal, catalog: list[dict], collections: list[dict], unsorted_ids: set[int],
                       min_group: int) -> tuple[list[dict], dict[int, int], list[tuple[int, int]]]:
@@ -174,6 +182,7 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
     if catalog and items:
         assignment, model = llm.assign(s, build_message(catalog, items))
         log.info("[%s] organize assignment from %s: %s", acct.id, model, assignment.model_dump_json())
+        assignment = unref(assignment, items)
         moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected)
     leftovers = [i for i in items if i["_id"] not in moves]
     if len(leftovers) < s.organize_min_group:
@@ -182,6 +191,7 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
     if leftovers or len(catalog) > 1:
         proposal, model = llm.propose(s, build_message(catalog, leftovers))
         log.info("[%s] organize proposal from %s: %s", acct.id, model, proposal.model_dump_json())
+        proposal = unref(proposal, leftovers)
     creates, clash_moves, merges = validate_proposal(proposal, catalog, collections, {i["_id"] for i in leftovers},
                                                      s.organize_min_group)
     survivor = dict(merges)
@@ -262,8 +272,9 @@ def plan_rebalance(s: Settings, catalog: list[dict], placements, merged_away: se
         return []
     targets = {c["id"] for c in catalog} - merged_away
     profiles = [c for c in catalog if c["id"] not in merged_away]
-    answer, model = llm.rebalance(s, build_message(profiles, items, label="FILED", current=current))
+    answer, model = llm.rebalance(s, build_message(profiles, items, label="FILED"))
     log.info("rebalance answer from %s: %s", model, answer.model_dump_json())
+    answer = unref(answer, items)
     rejected = {rid: placements.filed_into(rid) - {cid} for rid, cid in current.items()}
     titles = {i["_id"]: i.get("title", "") for i in items}
     return [(rid, src, dst, reason, titles[rid]) for rid, src, dst, reason in
