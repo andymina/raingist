@@ -97,27 +97,52 @@ def validate_proposal(p: Proposal, catalog: list[dict], collections: list[dict],
         existing[key] = None; placed |= set(ids)
     return creates, moves, merges
 
+STOPWORDS = frozenset("the and for with from that this these those your you are was were has have its into about "
+                      "how what why who when all any can not but our out one".split())
+
+def words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 2 and w not in STOPWORDS}
+
+def item_text(i: dict) -> str:
+    """What the model was shown about a bookmark (build_message), which its evidence must quote."""
+    return " ".join([i.get("title", ""), *i.get("tags", []), i.get("excerpt") or "", i.get("note") or ""])
+
+def grounded(evidence: str, text: str) -> bool:
+    """The evidence quotes the bookmark: at least two thirds of its words appear in the bookmark's own text. An empty
+    one fails, and so does one that restates the collection's scope instead of pointing at the bookmark (ADR 0010)."""
+    ev = words(evidence)
+    return bool(ev) and 3 * len(ev & words(text)) >= 2 * len(ev)
+
 def validate_assignment(a: Assignment, targets: set[int], remaining: set[int],
-                        rejected: dict[int, set[int]] | None = None) -> dict[int, int]:
-    """Valid moves only. `rejected` = collections each bookmark was filed into before and the owner moved it out of."""
+                        rejected: dict[int, set[int]] | None = None,
+                        texts: dict[int, str] | None = None) -> dict[int, int]:
+    """Valid moves only. `rejected` = collections each bookmark was filed into before and the owner moved it out of.
+    With `texts` (bookmark id -> item_text), a move also needs evidence grounded in that bookmark."""
     rejected = rejected or {}
     moves: dict[int, int] = {}
     for m in a.moves:
         if m.item_id in remaining and m.item_id not in moves and m.collection_id in targets \
                 and m.confidence == "high" and m.collection_id not in rejected.get(m.item_id, set()):
+            if texts is not None and not grounded(m.evidence, texts.get(m.item_id, "")):
+                log.info("dropped %s -> %s: evidence %r is not from the bookmark", m.item_id, m.collection_id, m.evidence)
+                continue
             moves[m.item_id] = m.collection_id
     return moves
 
 def validate_rebalance(a: Assignment, targets: set[int], current: dict[int, int], rejected: dict[int, set[int]],
-                       limit: int) -> list[tuple[int, int, int, str]]:
+                       limit: int, texts: dict[int, str] | None = None) -> list[tuple[int, int, int, str]]:
     """(item, from, to, reason) for confident moves to a different valid collection, or to Unsorted (0); at most
-    `limit`, in the model's order. A collection the owner moved the bookmark out of is never a destination."""
+    `limit`, in the model's order. A collection the owner moved the bookmark out of is never a destination. With
+    `texts`, a move into another collection needs grounded evidence; one back to Unsorted does not."""
     out, seen = [], set()
     for m in a.moves:
         src = current.get(m.item_id)
         dst = UNSORTED if m.collection_id == 0 else m.collection_id
         if src is None or m.item_id in seen or m.confidence != "high" or dst == src \
                 or (dst != UNSORTED and dst not in targets) or dst in rejected.get(m.item_id, set()):
+            continue
+        if dst != UNSORTED and texts is not None and not grounded(m.evidence, texts.get(m.item_id, "")):
+            log.info("dropped rebalance %s -> %s: evidence %r is not from the bookmark", m.item_id, dst, m.evidence)
             continue
         out.append((m.item_id, src, dst, m.reason.strip())); seen.add(m.item_id)
     return out[:limit]
@@ -183,7 +208,8 @@ def run_account(s: Settings, acct: Account, alerts: Alerts, dry_run: bool = Fals
         assignment, model = llm.assign(s, build_message(catalog, items))
         log.info("[%s] organize assignment from %s: %s", acct.id, model, assignment.model_dump_json())
         assignment = unref(assignment, items)
-        moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected)
+        moves = validate_assignment(assignment, {c["id"] for c in catalog}, {i["_id"] for i in items}, rejected,
+                                    {i["_id"]: item_text(i) for i in items})
     leftovers = [i for i in items if i["_id"] not in moves]
     if len(leftovers) < s.organize_min_group:
         leftovers = []   # too few to form a new collection; propose then only looks at merges
@@ -278,7 +304,8 @@ def plan_rebalance(s: Settings, catalog: list[dict], placements, merged_away: se
     rejected = {rid: placements.filed_into(rid) - {cid} for rid, cid in current.items()}
     titles = {i["_id"]: i.get("title", "") for i in items}
     return [(rid, src, dst, reason, titles[rid]) for rid, src, dst, reason in
-            validate_rebalance(answer, targets, current, rejected, s.organize_rebalance_max)]
+            validate_rebalance(answer, targets, current, rejected, s.organize_rebalance_max,
+                               {i["_id"]: item_text(i) for i in items})]
 
 def draft_descriptions(s: Settings, catalog: list[dict]) -> list[tuple[str, str]]:
     """(collection path, drafted scope) for each owner collection without a description. Never written to Raindrop:
