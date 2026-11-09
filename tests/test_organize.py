@@ -120,6 +120,25 @@ def test_assignment_validation():
     unsure = Assignment(moves=[Move(item_id=100, collection_id=10, confidence="medium")])
     assert validate_assignment(unsure, {10, 16}, {100}) == {}
 
+def test_evidence_must_quote_the_bookmark():
+    prompts = {"title": "7 Claude Prompts to Learn Anything Faster", "tags": ["ai", "learning"],
+               "note": "**AI summary**\nSeven Claude prompts for studying a new topic."}
+    text = organize.item_text(prompts)
+    assert organize.grounded("Claude Prompts to Learn Anything", text)
+    assert not organize.grounded("", text)
+    assert not organize.grounded("Open-source GitHub repositories and developer tools", text)   # restates the scope
+    a = Assignment(moves=[Move(item_id=1, collection_id=10, confidence="high",
+                               evidence="Open-source GitHub repositories and developer tools"),
+                          Move(item_id=2, collection_id=10, confidence="high", evidence="self-hosted GitHub repo"),
+                          Move(item_id=3, collection_id=10, confidence="high")])
+    texts = {1: text, 2: "Immich: a self-hosted GitHub repo for photos", 3: "anything"}
+    assert validate_assignment(a, {10}, {1, 2, 3}, texts=texts) == {2: 10}
+    assert validate_assignment(a, {10}, {1, 2, 3}) == {1: 10, 2: 10, 3: 10}   # no texts: confidence alone
+    r = Assignment(moves=[Move(item_id=1, collection_id=10, confidence="high", evidence="GitHub repositories"),
+                          Move(item_id=3, collection_id=0, confidence="high")])   # back to Unsorted needs no evidence
+    assert organize.validate_rebalance(r, {10, 12}, {1: 12, 3: 12}, {}, limit=10, texts=texts) == [
+        (3, 12, organize.UNSORTED, "")]
+
 def test_unref_maps_numbers_back_and_drops_unknown():
     items = [{"_id": 1888579447}, {"_id": 1910246220}]
     a = organize.unref(Assignment(moves=[Move(item_id=2, collection_id=10), Move(item_id=7, collection_id=10)]), items)
@@ -205,8 +224,8 @@ def run(settings, make_account, alerts, monkeypatch):
                         merges=[Merge(from_id=10, into_id=16)]), "m"
     def assign(s, msg):
         sent["assign"] = msg
-        return Assignment(moves=[Move(item_id=ref(msg, 102), collection_id=10, confidence="high"),
-                                 Move(item_id=ref(msg, 103), collection_id=16, confidence="high"),
+        return Assignment(moves=[Move(item_id=ref(msg, 102), collection_id=10, evidence="t102", confidence="high"),
+                                 Move(item_id=ref(msg, 103), collection_id=16, evidence="t103", confidence="high"),
                                  Move(item_id=ref(msg, 104), collection_id=999, confidence="high")]), "m"
     monkeypatch.setattr(organize.llm, "propose", propose)
     monkeypatch.setattr(organize.llm, "assign", assign)
@@ -249,7 +268,7 @@ def test_rebalance_moves_or_suggests_service_filings_only(run, alerts, monkeypat
     monkeypatch.setattr(organize.llm, "assign", lambda s, msg: (Assignment(), "m"))
     def rebalance(s, msg):
         sent["rebalance"] = msg
-        return Assignment(moves=[Move(item_id=ref(msg, 900), collection_id=12, confidence="high", reason="gadget review")]), "m"
+        return Assignment(moves=[Move(item_id=ref(msg, 900), collection_id=12, evidence="t900", confidence="high", reason="gadget review")]), "m"
     monkeypatch.setattr(organize.llm, "rebalance", rebalance)
     counts = organize.run_account(dataclasses.replace(s, organize_rebalance=mode), organize.store(s).load(s, 1), alerts)
     assert "FILED (id: title" in sent["rebalance"] and "1: t900 |" in sent["rebalance"]
@@ -286,7 +305,7 @@ def test_draft_descriptions_only_for_owner_collections_without_one(settings, mon
 def test_few_leftovers_send_no_bookmarks_to_propose(run, monkeypatch):
     go, s, sent = run
     monkeypatch.setattr(organize.llm, "assign", lambda s, msg: (Assignment(moves=[
-        Move(item_id=ref(msg, i), collection_id=10, confidence="high") for i in (100, 101, 102, 103, 104)]), "m"))   # only 105 left
+        Move(item_id=ref(msg, i), collection_id=10, evidence=f"t{i}", confidence="high") for i in (100, 101, 102, 103, 104)]), "m"))   # only 105 left
     go()
     assert sent["propose"].endswith("UNSORTED (id: title | tags | excerpt | note):\n(none)")
 

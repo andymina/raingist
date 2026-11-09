@@ -32,6 +32,7 @@ class Proposal(BaseModel):
 class Move(BaseModel):
     item_id: int
     collection_id: int = 0   # 0 = no collection clearly fits (assign: stays in Unsorted; rebalance: back to Unsorted)
+    evidence: str = ""       # words copied from the bookmark that meet the scope; checked by organize.grounded
     confidence: Literal["high", "medium", "low"] = "low"   # only "high" moves
     reason: str = ""
 
@@ -56,6 +57,11 @@ FIT_RULES = """How to judge whether a bookmark belongs in a collection from COLL
   music-making material; a restaurant list that mentions playlists is still a restaurant list.
 - Confidence is "high" only when a careful reader of that collection would expect this bookmark in it.
   Anything less is "medium" or "low", and a weak or partial match means no collection."""
+
+EVIDENCE_RULE = """evidence: before judging confidence, copy the words from THIS bookmark's title, excerpt or note that show
+it is what the collection's scope describes (for a collection of GitHub repos, the words that make it a repo). Copy them
+exactly; never restate the scope. If the only overlap is a shared theme, a tool or a person, it does not belong: set
+collection_id 0. An answer without evidence from the bookmark is not filed. Empty when collection_id is 0."""
 
 SYSTEM_PROMPT = """You write terse, searchable notes about saved bookmarks for a personal knowledge base.
 Use ONLY the provided material (title, URL, description, transcript, on-screen text). Every fact, name,
@@ -118,15 +124,17 @@ Output strict JSON with fields: new_collections ({{title, description, parent_id
 ASSIGN_PROMPT = """You file UNSORTED bookmarks into existing COLLECTIONS. For each UNSORTED bookmark, collection_id is the id
 of the one collection it clearly belongs in, or 0 when none does. Only ids from COLLECTIONS.
 """ + FIT_RULES + """
-Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
-per UNSORTED bookmark; reason is a short phrase naming what in the collection's scope or examples it matches."""
+""" + EVIDENCE_RULE + """
+Output strict JSON with field moves ({item_id, collection_id, evidence, confidence ("high"|"medium"|"low"), reason}[]),
+one entry per UNSORTED bookmark; reason is a short phrase naming what in the collection's scope or examples it matches."""
 
 REBALANCE_PROMPT = """You re-check FILED bookmarks, which an automatic filer put into collections earlier, against COLLECTIONS.
 Judge each FILED bookmark fresh: collection_id is the one collection it clearly belongs in, or 0 when none does.
 Only ids from COLLECTIONS.
 """ + FIT_RULES + """
-Output strict JSON with field moves ({item_id, collection_id, confidence ("high"|"medium"|"low"), reason}[]), one entry
-per FILED bookmark; reason is a short phrase naming what in the chosen collection's scope or examples it matches, or
+""" + EVIDENCE_RULE + """
+Output strict JSON with field moves ({item_id, collection_id, evidence, confidence ("high"|"medium"|"low"), reason}[]),
+one entry per FILED bookmark; reason is a short phrase naming what in the chosen collection's scope or examples it matches, or
 why none fits."""
 
 DESCRIBE_PROMPT = """You write scope descriptions for the owner's bookmark collections listed in DESCRIBE, using each one's
